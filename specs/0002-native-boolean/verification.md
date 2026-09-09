@@ -1,6 +1,6 @@
 # Native boolean verification and handoff
 
-Date: 2026-09-09. Status: local gates passed; CI pending. Not yet Verified.
+Date: 2026-09-09. Status: Verified for scoped Linux x86_64 gates; merged.
 Base main: `ce1075108d2ed9ef1f6ac6f0bc71e5694b5aa3ea` (M0 merged).
 Requirements committed before semantic changes: `dc1eb24`.
 Local implementation commit: `e85723d9ff8699b3fc6773425455fcc53bc268d6`.
@@ -40,11 +40,13 @@ No other-language implementation is linked into the SDK or fixture.
 
 ## Next run
 
-Resume `feat/m1-native-boolean` and its PR; do not duplicate the branch. Verify
-published source/test tree equality and record exact CI head/merge checkout and
-run links. Mark Spec 0002 Verified only after both CI modes pass. Merge only after
-required reviews and protections are satisfied; no human review is claimed.
-Then specify native UTF-8/binary arrays: checked offsets, invalid UTF-8 rejection,
+CI [run 34384349287](https://github.com/softwheel/ArrowZ/actions/runs/34384349287)
+completed successfully on head `57070144c35028d05d719d56966d76465a4e2210`.
+Both Native Zig jobs passed every step. PR #3 was mergeable, had no requested or
+required review recorded, and was squash-merged as
+`436b87a482d83325ab5e54de6ec2f5fcdcac18e7`.
+
+Specify native UTF-8/binary arrays: checked offsets, invalid UTF-8 rejection,
 OOM atomicity, null/empty distinction, borrowed slices and independent interop.
 M1 schemas/nested arrays/record batches and later native IPC remain unimplemented.
 No upstream patch was submitted; human-owner review remains mandatory upstream.

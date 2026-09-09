@@ -42,17 +42,26 @@ for kind, cls in enumerate((ArrowArray, ArrowSchema)):
         assert lib.arrowz_abi_offset(kind, i) == getattr(cls, name).offset
 
 types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(),
-         pa.int64(), pa.uint64(), pa.float32(), pa.float64(), pa.bool_()]
+         pa.int64(), pa.uint64(), pa.float32(), pa.float64(), pa.bool_(),
+         pa.binary(), pa.string()]
 cases = 0
 for kind, dtype in enumerate(types):
     for scenario in range(5):
         raw, schema = ArrowArray(), ArrowSchema()
         assert lib.arrowz_fixture(kind, scenario, ct.byref(raw), ct.byref(schema)) == 0
         address = raw.buffers[1]
+        data_address = raw.buffers[2] if kind >= 11 else None
         validity = raw.buffers[0]
+        if kind == 11:
+            values = [b"", b"\x00\xff", b"abc"]
+        elif kind == 12:
+            values = ["", "数据", "🏹"]
+        else:
+            values = None
         expected = [] if scenario == 0 else [
             None if scenario == 2 or (scenario >= 3 and i % 3 == 0)
-            else (i % 2 == 0 if kind == 10 else i) for i in range(20)
+            else (values[i % 3] if values is not None else (i % 2 == 0 if kind == 10 else i))
+            for i in range(20)
         ]
         if scenario == 4:
             expected = expected[7:16]
@@ -69,6 +78,8 @@ for kind, dtype in enumerate(types):
                 assert arr.buffers()[1].address == address, "value data copied"
                 if validity:
                     assert arr.buffers()[0].address == validity, "validity data copied"
+                if data_address:
+                    assert arr.buffers()[2].address == data_address, "variable data copied"
             assert arr.offset == (7 if scenario == 4 else 0)
             del arr
             gc.collect()

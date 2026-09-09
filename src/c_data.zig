@@ -58,6 +58,51 @@ pub fn exportBoolean(source: *@import("boolean.zig").BooleanArray) !Export {
     return exportFixedWidth(@import("boolean.zig").BooleanArray, "b", source);
 }
 
+/// Transfers native offsets, data and validity without copying.
+pub fn exportVariableBinary(source: *@import("variable_binary.zig").VariableBinaryArray) !Export {
+    const variable = @import("variable_binary.zig");
+    const State = struct {
+        array: variable.VariableBinaryArray,
+        empty_offset: i32 = 0,
+        buffers: [3]?*const anyopaque,
+
+        fn release(base: *ArrowArray) callconv(.c) void {
+            const state: *@This() = @ptrCast(@alignCast(base.private_data.?));
+            const allocator = state.array.allocator;
+            state.array.deinit();
+            allocator.destroy(state);
+            base.* = .{};
+        }
+    };
+    const length = std.math.cast(i64, source.len()) orelse return error.LengthOverflow;
+    const state = try source.allocator.create(State);
+    state.* = .{
+        .array = source.*,
+        .buffers = .{ null, null, null },
+    };
+    state.buffers = .{
+        if (state.array.null_count == 0) null else @ptrCast(state.array.validity.items.ptr),
+        if (state.array.offsets.items.len == 0) @ptrCast(&state.empty_offset) else @ptrCast(state.array.offsets.items.ptr),
+        if (state.array.data.items.len == 0) null else @ptrCast(state.array.data.items.ptr),
+    };
+    source.* = .{ .allocator = source.allocator, .kind = source.kind };
+    return .{
+        .array = .{
+            .length = length,
+            .null_count = @intCast(state.array.null_count),
+            .n_buffers = 3,
+            .buffers = &state.buffers,
+            .release = State.release,
+            .private_data = state,
+        },
+        .schema = .{
+            .format = if (state.array.kind == .binary) "z" else "u",
+            .flags = 2,
+            .release = schemaRelease,
+        },
+    };
+}
+
 fn exportFixedWidth(comptime Array: type, comptime arrow_format: [:0]const u8, source: *Array) !Export {
     const State = struct {
         array: Array,
@@ -187,4 +232,45 @@ fn booleanExportScenario(allocator: std.mem.Allocator) !void {
 
 test "boolean export allocation failures, zero-copy, relocation and release" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, booleanExportScenario, .{});
+}
+
+fn variableExportScenario(allocator: std.mem.Allocator) !void {
+    const variable = @import("variable_binary.zig");
+    var builder = variable.Utf8Builder.init(allocator);
+    defer builder.deinit();
+    try builder.append("数据");
+    try builder.append(null);
+    var array = builder.finish();
+    defer array.deinit();
+    const offsets = array.offsets.items.ptr;
+    const data = array.data.items.ptr;
+    var exported = exportVariableBinary(&array) catch |err| {
+        try std.testing.expectEqual(@as(usize, 2), array.len());
+        try std.testing.expectEqualStrings("数据", (try array.get(0)).?);
+        return err;
+    };
+    defer exported.deinit();
+    try std.testing.expectEqual(@intFromPtr(offsets), @intFromPtr(exported.array.buffers.?[1].?));
+    try std.testing.expectEqual(@intFromPtr(data), @intFromPtr(exported.array.buffers.?[2].?));
+    try std.testing.expectEqualStrings("u", std.mem.span(exported.schema.format.?));
+    var moved = exported.array;
+    exported.array.release = null;
+    releaseSchema(&exported.schema);
+    const moved_offsets: [*]const i32 = @ptrCast(@alignCast(moved.buffers.?[1].?));
+    try std.testing.expectEqual(@as(i32, 6), moved_offsets[1]);
+    releaseArray(&moved);
+    releaseArray(&moved);
+}
+
+test "variable binary export allocation failures and zero-copy ownership" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, variableExportScenario, .{});
+    const variable = @import("variable_binary.zig");
+    var empty: variable.VariableBinaryArray = .{ .allocator = std.testing.allocator, .kind = .binary };
+    defer empty.deinit();
+    var exported = try exportVariableBinary(&empty);
+    defer exported.deinit();
+    try std.testing.expect(exported.array.buffers.?[1] != null);
+    const offsets: [*]const i32 = @ptrCast(@alignCast(exported.array.buffers.?[1].?));
+    try std.testing.expectEqual(@as(i32, 0), offsets[0]);
+    try std.testing.expectEqualStrings("z", std.mem.span(exported.schema.format.?));
 }
