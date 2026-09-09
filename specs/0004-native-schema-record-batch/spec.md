@@ -1,6 +1,6 @@
 # Spec 0004: Native schemas and record batches
 
-Status: Accepted for implementation; verification pending.
+Status: Verified for scoped Linux x86_64 gates; merged in PR #5.
 
 ## Requirements
 
@@ -27,12 +27,12 @@ semantics are designed explicitly rather than hidden behind unsafe erasure.
 
 ## Tasks and acceptance gates
 
-- [ ] Owning fields/schemas with deep-copied UTF-8 names and arbitrary metadata.
-- [ ] Exhaustive allocator-failure tests for nested schema copies and cleanup.
-- [ ] Borrowed views for all 13 implemented native types and uniform type/length.
-- [ ] Record-batch validation: empty schemas, zero columns with nonzero rows,
+- [x] Owning fields/schemas with deep-copied UTF-8 names and arbitrary metadata.
+- [x] Exhaustive allocator-failure tests for nested schema copies and cleanup.
+- [x] Borrowed views for all 13 implemented native types and uniform type/length.
+- [x] Record-batch validation: empty schemas, zero columns with nonzero rows,
       count/type/length errors, nullable metadata, name/index lookup and lifetimes.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe tests plus all existing example,
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe tests plus all existing example,
       65-case interoperability, formatting and no-shared-runtime gates.
 
 Independent interoperability remains covered at the array boundary by the

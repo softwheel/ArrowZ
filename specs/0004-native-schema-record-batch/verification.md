@@ -1,6 +1,6 @@
 # Native schema and record-batch verification and handoff
 
-Date: 2026-09-09. Status: local gates passed; required CI pending.
+Date: 2026-09-09. Status: Verified for scoped Linux x86_64 gates; merged.
 Base main: `7eee632ae308e9ba462b6a50529a81e01c6a8e85`.
 Requirements committed before implementation: `90b8753` (local identity).
 Implementation commit: `19f0e70f2bec25c0a66b6d9ac67988ebbe8827cd`.
@@ -39,9 +39,12 @@ the unchanged array export boundary; batch-level C export was explicitly deferre
 
 ## Remaining gate and next slice
 
-Publish a focused PR preserving spec-before-code order and verify its full/source
-trees match. Record actual CI head/run/job results; mark Verified and merge only
-after required reviews and protections pass. No human review is claimed.
+CI [run 34396481112](https://github.com/softwheel/ArrowZ/actions/runs/34396481112)
+completed successfully on published head
+`782320f6dc1a10fe38d026c0565cdb9bdad8e168`; both jobs passed every step and
+the published trees matched local evidence. PR #5 was mergeable with no requested
+or required review recorded and was squash-merged as
+`24e2a766aca9e2938fac73bc7b79db139c27314c`.
 
 Next design ownership-bearing heterogeneous columns and nested C Data struct
 export, including all-or-nothing OOM behavior, child/schema release ordering and
