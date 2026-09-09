@@ -13,9 +13,10 @@ tests as an independent compatibility reference.
 ## Current scope
 
 Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
-float32/float64, bit-packed booleans, UTF-8 and binary arrays, builders, borrowed slices and
+float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
+metadata, validated borrowed record batches, builders, slices and
 ownership-transferring C Data exports. This is a foundation, not a complete Arrow
-SDK. Nested arrays, record
+SDK. Nested arrays, owning heterogeneous batches, record-batch C export,
 batches, import/stream adapters and native IPC are planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
@@ -54,6 +55,11 @@ UTF-8 before mutation. Both produce canonical 32-bit-offset variable-binary arra
 and distinguish null from empty values. `exportVariableBinary` transfers validity,
 offset and data buffers without copying.
 
+`arrowz.Schema.init` deep-copies field names and custom metadata. Construct typed
+borrowed columns with `arrowz.ArrayView`, then call `arrowz.RecordBatch.init` with
+an explicit row count. It rejects mismatched column counts, Arrow types and lengths.
+The schema, view slice and underlying arrays must outlive the borrowed batch.
+
 For optional zero-copy export:
 
 ```zig
@@ -83,5 +89,6 @@ ABI layout/zero-copy checks. Other targets remain unverified.
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
 the [boolean spec](specs/0002-native-boolean/spec.md) and
 [UTF-8/binary spec](specs/0003-native-variable-binary/spec.md), alongside
+the [schema/record-batch spec](specs/0004-native-schema-record-batch/spec.md) and
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
