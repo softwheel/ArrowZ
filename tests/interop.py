@@ -32,6 +32,8 @@ def release(value):
 lib = ct.CDLL(str(pathlib.Path(sys.argv[1]).resolve()))
 lib.arrowz_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_fixture.restype = ct.c_int
+lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
+lib.arrowz_batch_fixture.restype = ct.c_int
 lib.arrowz_abi_size.argtypes = [ct.c_uint32]
 lib.arrowz_abi_size.restype = ct.c_size_t
 lib.arrowz_abi_offset.argtypes = [ct.c_uint32, ct.c_uint32]
@@ -87,4 +89,36 @@ for kind, dtype in enumerate(types):
             release(raw)
             release(schema)
         cases += 1
+
+raw, schema = ArrowArray(), ArrowSchema()
+assert lib.arrowz_batch_fixture(ct.byref(raw), ct.byref(schema)) == 0
+children = ct.cast(raw.children, ct.POINTER(ct.POINTER(ArrowArray)))
+child_addresses = [children[i].contents.buffers[1] for i in range(3)]
+name_data_address = children[1].contents.buffers[2]
+try:
+    imported_schema = pa.Schema._import_from_c(ct.addressof(schema))
+    assert not schema.release
+    assert imported_schema.names == ["id", "name", "active"]
+    assert imported_schema.types == [pa.int32(), pa.string(), pa.bool_()]
+    assert not imported_schema.field(0).nullable
+    assert imported_schema.field(0).metadata == {b"role": b"key"}
+    assert imported_schema.metadata == {b"source": b"arrowz"}
+    batch = pa.RecordBatch._import_from_c(ct.addressof(raw), imported_schema)
+    assert not raw.release
+    assert batch.to_pydict() == {
+        "id": [10, 11, 12, 13],
+        "name": ["zero", None, "数据", ""],
+        "active": [True, False, None, True],
+    }
+    batch.validate(full=True)
+    assert batch.column(0).buffers()[1].address == child_addresses[0]
+    assert batch.column(1).buffers()[1].address == child_addresses[1]
+    assert batch.column(1).buffers()[2].address == name_data_address
+    assert batch.column(2).buffers()[1].address == child_addresses[2]
+    del batch
+    gc.collect()
+finally:
+    release(raw)
+    release(schema)
+cases += 1
 print(f"PASS: {cases} native Zig -> PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
