@@ -34,6 +34,8 @@ lib.arrowz_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray),
 lib.arrowz_fixture.restype = ct.c_int
 lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_batch_fixture.restype = ct.c_int
+lib.arrowz_nested_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
+lib.arrowz_nested_batch_fixture.restype = ct.c_int
 lib.arrowz_abi_size.argtypes = [ct.c_uint32]
 lib.arrowz_abi_size.restype = ct.c_size_t
 lib.arrowz_abi_offset.argtypes = [ct.c_uint32, ct.c_uint32]
@@ -116,6 +118,52 @@ try:
     assert batch.column(1).buffers()[2].address == name_data_address
     assert batch.column(2).buffers()[1].address == child_addresses[2]
     del batch
+    gc.collect()
+finally:
+    release(raw)
+    release(schema)
+cases += 1
+
+raw, schema = ArrowArray(), ArrowSchema()
+assert lib.arrowz_nested_batch_fixture(ct.byref(raw), ct.byref(schema)) == 0
+root_children = ct.cast(raw.children, ct.POINTER(ct.POINTER(ArrowArray)))
+outer_raw = root_children[0].contents
+outer_children = ct.cast(outer_raw.children, ct.POINTER(ct.POINTER(ArrowArray)))
+inner_raw = outer_children[0].contents
+label_raw = outer_children[1].contents
+inner_children = ct.cast(inner_raw.children, ct.POINTER(ct.POINTER(ArrowArray)))
+id_raw = inner_children[0].contents
+addresses = {
+    "outer_validity": outer_raw.buffers[0],
+    "inner_validity": inner_raw.buffers[0],
+    "id_values": id_raw.buffers[1],
+    "label_offsets": label_raw.buffers[1],
+    "label_data": label_raw.buffers[2],
+}
+try:
+    imported_schema = pa.Schema._import_from_c(ct.addressof(schema))
+    assert not schema.release
+    outer_field = imported_schema.field("outer")
+    assert outer_field.metadata == {b"level": b"outer"}
+    assert outer_field.type.field("inner").metadata == {b"level": b"inner"}
+    assert not outer_field.type.field("inner").type.field("id").nullable
+    assert imported_schema.metadata == {b"source": b"arrowz-nested"}
+    batch = pa.RecordBatch._import_from_c(ct.addressof(raw), imported_schema)
+    assert not raw.release
+    assert batch.column(0).to_pylist() == [
+        None,
+        {"inner": None, "label": None},
+        {"inner": {"id": 42}, "label": "two"},
+    ]
+    batch.validate(full=True)
+    outer = batch.column(0)
+    inner = outer.field(0)
+    assert outer.buffers()[0].address == addresses["outer_validity"]
+    assert inner.buffers()[0].address == addresses["inner_validity"]
+    assert inner.field(0).buffers()[1].address == addresses["id_values"]
+    assert outer.field(1).buffers()[1].address == addresses["label_offsets"]
+    assert outer.field(1).buffers()[2].address == addresses["label_data"]
+    del batch, outer, inner
     gc.collect()
 finally:
     release(raw)
