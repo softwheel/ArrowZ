@@ -1,6 +1,6 @@
 # Spec 0001: Native Zig foundation
 
-Status: Accepted (implementation direction authorized by repository owner).
+Status: Verified for M0's Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -34,11 +34,11 @@ empty arrays, and shared buffer addresses. PyArrow is not a runtime dependency.
 
 ## Tasks / acceptance
 
-- [ ] M0-T1 native bitmap, primitive arrays, builders and borrowed slices.
-- [ ] M0-T2 optional C Data exports with move-safe ownership.
-- [ ] M0-T3 allocator failure, lifetime and bounds tests.
-- [ ] M0-T4 independent PyArrow export interoperability and ABI checks.
-- [ ] M0-T5 CI, runnable example, exact evidence and handoff.
+- [x] M0-T1 native bitmap, primitive arrays, builders and borrowed slices.
+- [x] M0-T2 optional C Data exports with move-safe ownership.
+- [x] M0-T3 allocator failure, lifetime and bounds tests.
+- [x] M0-T4 independent PyArrow export interoperability and ABI checks.
+- [x] M0-T5 CI, runnable example, exact evidence and handoff.
 
 Mark Verified only after required CI passes on the proposed commit/merge checkout.
 Local verification alone does not establish cross-platform or full Arrow coverage.

@@ -50,8 +50,17 @@ pub fn releaseSchema(schema: *ArrowSchema) void {
 /// The source becomes an empty, reusable array. Do not copy the returned owner.
 pub fn exportPrimitive(comptime T: type, source: *primitive.PrimitiveArray(T)) !Export {
     primitive.checkType(T);
+    return exportFixedWidth(primitive.PrimitiveArray(T), format(T), source);
+}
+
+/// Transfers native packed boolean buffers; failure preserves source ownership.
+pub fn exportBoolean(source: *@import("boolean.zig").BooleanArray) !Export {
+    return exportFixedWidth(@import("boolean.zig").BooleanArray, "b", source);
+}
+
+fn exportFixedWidth(comptime Array: type, comptime arrow_format: [:0]const u8, source: *Array) !Export {
     const State = struct {
-        array: primitive.PrimitiveArray(T),
+        array: Array,
         buffers: [2]?*const anyopaque,
 
         fn release(base: *ArrowArray) callconv(.c) void {
@@ -81,7 +90,7 @@ pub fn exportPrimitive(comptime T: type, source: *primitive.PrimitiveArray(T)) !
             .release = State.release,
             .private_data = state,
         },
-        .schema = .{ .format = format(T), .flags = 2, .release = schemaRelease },
+        .schema = .{ .format = arrow_format, .flags = 2, .release = schemaRelease },
     };
 }
 
@@ -147,4 +156,35 @@ test "empty export and every primitive format" {
         try std.testing.expect(exported.array.buffers.?[1] == null);
         try std.testing.expectEqualStrings(format(T), std.mem.span(exported.schema.format.?));
     }
+}
+
+fn booleanExportScenario(allocator: std.mem.Allocator) !void {
+    var builder = @import("boolean.zig").BooleanBuilder.init(allocator);
+    defer builder.deinit();
+    try builder.append(true);
+    try builder.append(null);
+    var array = builder.finish();
+    defer array.deinit();
+    const values = array.values.items.ptr;
+    var exported = exportBoolean(&array) catch |err| {
+        try std.testing.expectEqual(@as(usize, 2), array.len());
+        try std.testing.expectEqual(@as(?bool, true), try array.get(0));
+        try std.testing.expectEqual(@as(?bool, null), try array.get(1));
+        return err;
+    };
+    defer exported.deinit();
+    try std.testing.expectEqual(@as(usize, 0), array.len());
+    try std.testing.expectEqual(@intFromPtr(values), @intFromPtr(exported.array.buffers.?[1].?));
+    var moved = exported.array;
+    exported.array.release = null;
+    releaseSchema(&exported.schema);
+    const data: [*]const u8 = @ptrCast(moved.buffers.?[1].?);
+    try std.testing.expectEqual(@as(u8, 1), data[0]);
+    releaseArray(&moved);
+    try std.testing.expect(moved.release == null);
+    releaseArray(&moved);
+}
+
+test "boolean export allocation failures, zero-copy, relocation and release" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, booleanExportScenario, .{});
 }

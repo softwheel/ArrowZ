@@ -12,9 +12,10 @@ tests as an independent compatibility reference.
 
 ## Current scope
 
-Experimental M0: nullable signed/unsigned 8/16/32/64-bit integers, float32/float64,
-builders, borrowed slices and ownership-transferring C Data exports. This is a
-foundation, not a complete Arrow SDK. Boolean, strings, nested arrays, record
+Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
+float32/float64 and bit-packed booleans, builders, borrowed slices and
+ownership-transferring C Data exports. This is a foundation, not a complete Arrow
+SDK. Strings, nested arrays, record
 batches, import/stream adapters and native IPC are planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
@@ -43,6 +44,11 @@ it. Out-of-range access returns `error.OutOfBounds`. Allocator lifetime must exc
 all arrays and exported buffers created with it. Internal storage fields are not
 an API for mutation; use builders and views to preserve invariants.
 
+For nullable booleans use `arrowz.BooleanBuilder.init(allocator)`, append `true`,
+`false` or `null`, and call `finish()`. `BooleanArray` and `BooleanView` expose the
+same `get`/`view`/`slice` pattern; both values and validity use packed bitmaps.
+Use `arrowz.c_data.exportBoolean(&array)` for zero-copy boolean export.
+
 For optional zero-copy export:
 
 ```zig
@@ -66,9 +72,10 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 50 independent PyArrow cases, allocation failure paths and
+ReleaseSafe, including 55 independent PyArrow cases, allocation failure paths and
 ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
+the [boolean spec](specs/0002-native-boolean/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.

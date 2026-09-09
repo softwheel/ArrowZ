@@ -16,6 +16,7 @@ export fn arrowz_fixture(kind: u32, scenario: u32, out: *c.ArrowArray, schema: *
         7 => produce(u64, scenario, out, schema),
         8 => produce(f32, scenario, out, schema),
         9 => produce(f64, scenario, out, schema),
+        10 => produce(bool, scenario, out, schema),
         else => return 2,
     }) catch return 3;
     return 0;
@@ -23,11 +24,12 @@ export fn arrowz_fixture(kind: u32, scenario: u32, out: *c.ArrowArray, schema: *
 
 fn produce(comptime T: type, scenario: u32, out: *c.ArrowArray, schema: *c.ArrowSchema) !void {
     if (scenario > 4) return error.BadScenario;
-    var builder = z.PrimitiveBuilder(T).init(std.heap.page_allocator);
+    var builder = (if (T == bool) z.BooleanBuilder else z.PrimitiveBuilder(T)).init(std.heap.page_allocator);
     defer builder.deinit();
     const count: usize = if (scenario == 0) 0 else 20;
     for (0..count) |i| {
         const value: T = switch (@typeInfo(T)) {
+            .bool => i % 2 == 0,
             .float => @floatFromInt(i),
             else => @intCast(i),
         };
@@ -35,7 +37,7 @@ fn produce(comptime T: type, scenario: u32, out: *c.ArrowArray, schema: *c.Arrow
     }
     var array = builder.finish();
     defer array.deinit();
-    var exported = try c.exportPrimitive(T, &array);
+    var exported = if (T == bool) try c.exportBoolean(&array) else try c.exportPrimitive(T, &array);
     // Exercise non-byte-aligned offset through the standard ABI consumer rules.
     if (scenario == 4) {
         exported.array.offset = 7;
