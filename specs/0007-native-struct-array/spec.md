@@ -1,6 +1,6 @@
 # Spec 0007: Native struct arrays
 
-Status: Accepted for implementation; verification pending.
+Status: Implemented; published-commit CI verification pending.
 
 ## Requirements
 
@@ -35,14 +35,15 @@ child schemas and PyArrow nested interoperability require the next numbered spec
 
 ## Tasks and acceptance gates
 
-- [ ] Recursive schema fields, deep-copy ownership and invalid child-layout checks.
-- [ ] Failure-atomic `StructArray.take`, packed parent validity, explicit empty
+- [x] Recursive schema fields, deep-copy ownership and invalid child-layout checks.
+- [x] Failure-atomic `StructArray.take`, packed parent validity, explicit empty
       struct length and recursive destruction.
-- [ ] Zero-copy child transfer and borrowed `StructView` validity, slicing, child
+- [x] Zero-copy child transfer and borrowed `StructView` validity, slicing, child
       access and bounds behavior, including nested structs.
-- [ ] Record-batch recursive type/layout validation for borrowed and owned columns.
-- [ ] Existing C Data batch export rejects struct columns without moving the batch.
+- [x] Record-batch recursive type/layout validation for borrowed and owned columns.
+- [x] Existing C Data batch export rejects struct columns without moving the batch.
 - [ ] Exhaustive allocation-failure/leak tests and pinned Zig 0.16.0 Debug and
       ReleaseSafe formatting, tests, example, 66-case interop and no-runtime gates.
+      Local gates pass; CI remains required on the published proposed commit.
 
 Mark Verified only after CI passes on the published proposed commit.
