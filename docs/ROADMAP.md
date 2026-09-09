@@ -18,6 +18,7 @@ M0 passed its scoped gates in PR #1. The first M1 slice, native bit-packed boole
 arrays, passed in PR #3. Native UTF-8/binary is governed by
 specs/0003-native-variable-binary/spec.md and passed in PR #4. Native schemas and
 borrowed validated record batches are governed by
-specs/0004-native-schema-record-batch/spec.md.
+specs/0004-native-schema-record-batch/spec.md and passed in PR #5. Owning
+heterogeneous batches are governed by specs/0005-owning-record-batch/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.

@@ -14,7 +14,7 @@ tests as an independent compatibility reference.
 
 Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
 float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
-metadata, validated borrowed record batches, builders, slices and
+metadata, borrowed and owning heterogeneous record batches, builders, slices and
 ownership-transferring C Data exports. This is a foundation, not a complete Arrow
 SDK. Nested arrays, owning heterogeneous batches, record-batch C export,
 batches, import/stream adapters and native IPC are planned in the [roadmap](docs/ROADMAP.md).
@@ -60,6 +60,12 @@ borrowed columns with `arrowz.ArrayView`, then call `arrowz.RecordBatch.init` wi
 an explicit row count. It rejects mismatched column counts, Arrow types and lengths.
 The schema, view slice and underlying arrays must outlive the borrowed batch.
 
+Use `OwnedArray.takePrimitive`, `takeBoolean`, or `takeVariable` to transfer native
+buffers into a concrete tagged owner. `OwnedRecordBatch.take` validates before
+moving anything: errors and allocation failures preserve every input, while
+success owns the schema, column container and all buffers. `borrow` creates a
+temporary zero-copy `RecordBatch` view.
+
 For optional zero-copy export:
 
 ```zig
@@ -90,5 +96,6 @@ See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, 
 the [boolean spec](specs/0002-native-boolean/spec.md) and
 [UTF-8/binary spec](specs/0003-native-variable-binary/spec.md), alongside
 the [schema/record-batch spec](specs/0004-native-schema-record-batch/spec.md) and
+the [owning-batch spec](specs/0005-owning-record-batch/spec.md), plus
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
