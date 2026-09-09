@@ -4,23 +4,39 @@ const c = @import("c_data.zig");
 const owned = @import("owned_batch.zig");
 const schema_mod = @import("schema.zig");
 
-const ChildArrayState = struct {
+const ArrayNodeState = struct {
     allocator: std.mem.Allocator,
     column: owned.OwnedArray = undefined,
     armed: bool = false,
     empty_offset: i32 = 0,
     buffers: [3]?*const anyopaque = .{ null, null, null },
+    children: []?*c.ArrowArray = &.{},
+    children_owned: bool = false,
     base: c.ArrowArray = .{},
 
-    fn create(allocator: std.mem.Allocator) !*ChildArrayState {
-        const state = try allocator.create(ChildArrayState);
+    fn create(allocator: std.mem.Allocator, source: *const owned.OwnedArray) !*ArrayNodeState {
+        const state = try allocator.create(ArrayNodeState);
         state.* = .{ .allocator = allocator };
         state.base.release = release;
         state.base.private_data = state;
+        errdefer state.discard();
+        switch (source.*) {
+            .struct_ => |*array| {
+                _ = std.math.cast(i64, array.children.len) orelse return error.LengthOverflow;
+                state.children = try allocator.alloc(?*c.ArrowArray, array.children.len);
+                state.children_owned = true;
+                @memset(state.children, null);
+                for (array.children, state.children) |*child, *slot| {
+                    const child_state = try ArrayNodeState.create(allocator, child);
+                    slot.* = &child_state.base;
+                }
+            },
+            else => {},
+        }
         return state;
     }
 
-    fn arm(self: *ChildArrayState, source: *owned.OwnedArray) void {
+    fn arm(self: *ArrayNodeState, source: *owned.OwnedArray) void {
         self.column = source.*;
         source.* = undefined;
         self.armed = true;
@@ -31,7 +47,7 @@ const ChildArrayState = struct {
                     if (array.len() == 0) null else @ptrCast(array.values.items.ptr),
                     null,
                 };
-                self.base = childBase(self, array.len(), array.null_count, 2);
+                self.base = childBase(self, array.len(), array.null_count, 2, 0);
             },
             .boolean => |*array| {
                 self.buffers = .{
@@ -39,7 +55,7 @@ const ChildArrayState = struct {
                     if (array.len() == 0) null else @ptrCast(array.values.items.ptr),
                     null,
                 };
-                self.base = childBase(self, array.len(), array.null_count, 2);
+                self.base = childBase(self, array.len(), array.null_count, 2, 0);
             },
             .binary, .utf8 => |*array| {
                 self.buffers = .{
@@ -47,35 +63,69 @@ const ChildArrayState = struct {
                     if (array.offsets.items.len == 0) @ptrCast(&self.empty_offset) else @ptrCast(array.offsets.items.ptr),
                     if (array.data.items.len == 0) null else @ptrCast(array.data.items.ptr),
                 };
-                self.base = childBase(self, array.len(), array.null_count, 3);
+                self.base = childBase(self, array.len(), array.null_count, 3, 0);
             },
-            .struct_ => unreachable,
+            .struct_ => |*array| {
+                self.buffers = .{
+                    if (array.null_count == 0) null else @ptrCast(array.validity.ptr),
+                    null,
+                    null,
+                };
+                self.base = childBase(self, array.len(), array.null_count, 1, @intCast(self.children.len));
+                for (array.children, self.children) |*child, child_base| {
+                    const child_state: *ArrayNodeState = @ptrCast(@alignCast(child_base.?.private_data.?));
+                    child_state.arm(child);
+                }
+            },
         }
     }
 
-    fn childBase(self: *ChildArrayState, len: usize, null_count: usize, n_buffers: i64) c.ArrowArray {
+    fn childBase(self: *ArrayNodeState, len: usize, null_count: usize, n_buffers: i64, n_children: i64) c.ArrowArray {
         return .{
             .length = @intCast(len),
             .null_count = @intCast(null_count),
             .n_buffers = n_buffers,
+            .n_children = n_children,
             .buffers = &self.buffers,
+            .children = if (self.children.len == 0) null else self.children.ptr,
             .release = release,
             .private_data = self,
         };
     }
 
     fn release(base: *c.ArrowArray) callconv(.c) void {
-        const self: *ChildArrayState = @ptrCast(@alignCast(base.private_data.?));
+        const self: *ArrayNodeState = @ptrCast(@alignCast(base.private_data.?));
         const allocator = self.allocator;
-        if (self.armed) self.column.deinit();
+        for (self.children) |child| if (child) |value| c.releaseArray(value);
+        if (self.armed) self.releaseColumn();
+        if (self.children_owned) allocator.free(self.children);
         base.* = .{};
         allocator.destroy(self);
     }
 
-    fn discard(self: *ChildArrayState) void {
+    fn discard(self: *ArrayNodeState) void {
         const allocator = self.allocator;
-        if (self.armed) self.column.deinit();
+        for (self.children) |child| if (child) |value| {
+            const child_state: *ArrayNodeState = @ptrCast(@alignCast(value.private_data.?));
+            child_state.discard();
+        };
+        if (self.armed) self.releaseColumn();
+        if (self.children_owned) allocator.free(self.children);
         allocator.destroy(self);
+    }
+
+    fn releaseColumn(self: *ArrayNodeState) void {
+        switch (self.column) {
+            .struct_ => |*array| {
+                // Descendant values moved into child states; release only this shell.
+                array.allocator.free(array.children);
+                array.allocator.free(array.child_views);
+                array.allocator.free(array.validity);
+                array.* = undefined;
+            },
+            else => self.column.deinit(),
+        }
+        self.armed = false;
     }
 };
 
@@ -95,7 +145,7 @@ const ArrayRootState = struct {
 
     fn discard(self: *ArrayRootState) void {
         for (self.children) |child| if (child) |value| {
-            const state: *ChildArrayState = @ptrCast(@alignCast(value.private_data.?));
+            const state: *ArrayNodeState = @ptrCast(@alignCast(value.private_data.?));
             state.discard();
         };
         self.allocator.free(self.children);
@@ -103,30 +153,47 @@ const ArrayRootState = struct {
     }
 };
 
-const ChildSchemaState = struct {
+const SchemaNodeState = struct {
     allocator: std.mem.Allocator,
     name: [:0]u8,
     metadata: ?[]u8,
+    children: []?*c.ArrowSchema = &.{},
+    children_owned: bool = false,
     base: c.ArrowSchema,
 
-    fn create(allocator: std.mem.Allocator, field: schema_mod.Field) !*ChildSchemaState {
+    fn create(allocator: std.mem.Allocator, field: schema_mod.Field) !*SchemaNodeState {
         if (std.mem.indexOfScalar(u8, field.name, 0) != null) return error.NameContainsNul;
+        const child_count = std.math.cast(i64, field.children.len) orelse return error.LengthOverflow;
         const name = try allocator.dupeZ(u8, field.name);
-        errdefer allocator.free(name);
+        var state_owns_allocations = false;
+        errdefer if (!state_owns_allocations) allocator.free(name);
         const metadata = try encodeMetadata(allocator, field.metadata);
-        errdefer if (metadata) |bytes| allocator.free(bytes);
-        const self = try allocator.create(ChildSchemaState);
+        errdefer if (!state_owns_allocations) if (metadata) |bytes| allocator.free(bytes);
+        const self = try allocator.create(SchemaNodeState);
         self.* = .{
             .allocator = allocator,
             .name = name,
             .metadata = metadata,
             .base = .{},
         };
+        state_owns_allocations = true;
+        errdefer self.discard();
+        if (field.data_type == .struct_) {
+            self.children = try allocator.alloc(?*c.ArrowSchema, field.children.len);
+            self.children_owned = true;
+            @memset(self.children, null);
+            for (field.children, self.children) |child_field, *slot| {
+                const child_state = try SchemaNodeState.create(allocator, child_field);
+                slot.* = &child_state.base;
+            }
+        }
         self.base = .{
             .format = format(field.data_type),
             .name = self.name.ptr,
             .metadata = if (self.metadata) |bytes| bytes.ptr else null,
             .flags = if (field.nullable) 2 else 0,
+            .n_children = child_count,
+            .children = if (self.children.len == 0) null else self.children.ptr,
             .release = release,
             .private_data = self,
         };
@@ -134,15 +201,22 @@ const ChildSchemaState = struct {
     }
 
     fn release(base: *c.ArrowSchema) callconv(.c) void {
-        const self: *ChildSchemaState = @ptrCast(@alignCast(base.private_data.?));
+        const self: *SchemaNodeState = @ptrCast(@alignCast(base.private_data.?));
         const allocator = self.allocator;
+        for (self.children) |child| if (child) |value| c.releaseSchema(value);
+        if (self.children_owned) allocator.free(self.children);
         allocator.free(self.name);
         if (self.metadata) |bytes| allocator.free(bytes);
         base.* = .{};
         allocator.destroy(self);
     }
 
-    fn discard(self: *ChildSchemaState) void {
+    fn discard(self: *SchemaNodeState) void {
+        for (self.children) |child| if (child) |value| {
+            const child_state: *SchemaNodeState = @ptrCast(@alignCast(value.private_data.?));
+            child_state.discard();
+        };
+        if (self.children_owned) self.allocator.free(self.children);
         self.allocator.free(self.name);
         if (self.metadata) |bytes| self.allocator.free(bytes);
         self.allocator.destroy(self);
@@ -169,7 +243,7 @@ const SchemaRootState = struct {
 
     fn discard(self: *SchemaRootState) void {
         for (self.children) |child| if (child) |value| {
-            const state: *ChildSchemaState = @ptrCast(@alignCast(value.private_data.?));
+            const state: *SchemaNodeState = @ptrCast(@alignCast(value.private_data.?));
             state.discard();
         };
         self.allocator.free(self.children);
@@ -182,7 +256,6 @@ const SchemaRootState = struct {
 /// Consumes a validated owning batch only after all fallible work succeeds.
 /// On error, source remains fully owned and usable.
 pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
-    for (source.columns) |*column| if (column.dataType() == .struct_) return error.UnsupportedNestedType;
     const row_count = std.math.cast(i64, source.row_count) orelse return error.LengthOverflow;
     const child_count = std.math.cast(i64, source.columns.len) orelse return error.LengthOverflow;
     const allocator = source.allocator;
@@ -192,8 +265,8 @@ pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
     errdefer array_state.discard();
     array_state.children = try allocator.alloc(?*c.ArrowArray, source.columns.len);
     @memset(array_state.children, null);
-    for (array_state.children) |*slot| {
-        const child = try ChildArrayState.create(allocator);
+    for (source.columns, array_state.children) |*column, *slot| {
+        const child = try ArrayNodeState.create(allocator, column);
         slot.* = &child.base;
     }
 
@@ -208,13 +281,13 @@ pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
     schema_state.children = try allocator.alloc(?*c.ArrowSchema, source.schema.fields.len);
     @memset(schema_state.children, null);
     for (source.schema.fields, schema_state.children) |field, *slot| {
-        const child = try ChildSchemaState.create(allocator, field);
+        const child = try SchemaNodeState.create(allocator, field);
         slot.* = &child.base;
     }
 
     // No fallible operations after the first ownership move.
     for (source.columns, array_state.children) |*column, child_base| {
-        const child: *ChildArrayState = @ptrCast(@alignCast(child_base.?.private_data.?));
+        const child: *ArrayNodeState = @ptrCast(@alignCast(child_base.?.private_data.?));
         child.arm(column);
     }
     allocator.free(source.columns);
@@ -449,25 +522,127 @@ test "all native child layouts and length and metadata bounds" {
     }
 }
 
-test "record-batch export rejects struct columns before moving ownership" {
-    var native_schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{
-        .name = "nested",
+fn nestedExportScenario(allocator: std.mem.Allocator) !void {
+    const primitive = @import("primitive.zig");
+    const variable = @import("variable_binary.zig");
+    var native_schema = try schema_mod.Schema.init(allocator, &.{.{
+        .name = "outer",
         .data_type = .struct_,
-    }}, &.{});
+        .nullable = false,
+        .metadata = &.{.{ .key = "level", .value = "outer" }},
+        .children = &.{
+            .{
+                .name = "inner",
+                .data_type = .struct_,
+                .metadata = &.{.{ .key = "level", .value = "inner" }},
+                .children = &.{.{ .name = "id", .data_type = .int32, .nullable = false }},
+            },
+            .{ .name = "label", .data_type = .utf8 },
+        },
+    }}, &.{.{ .key = "source", .value = "nested-zig" }});
     var schema_live = true;
     defer if (schema_live) native_schema.deinit();
-    var struct_array = try owned.StructArray.take(std.testing.allocator, &.{}, 4, null);
-    var struct_live = true;
-    defer if (struct_live) struct_array.deinit();
-    var columns = [_]owned.OwnedArray{.{ .struct_ = struct_array }};
-    struct_live = false;
+
+    var id_builder = primitive.PrimitiveBuilder(i32).init(allocator);
+    defer id_builder.deinit();
+    var label_builder = variable.Utf8Builder.init(allocator);
+    defer label_builder.deinit();
+    for (0..3) |i| {
+        try id_builder.append(@intCast(i + 40));
+        try label_builder.append(if (i == 1) null else if (i == 0) "zero" else "two");
+    }
+    var ids = id_builder.finish();
+    defer ids.deinit();
+    var labels = label_builder.finish();
+    defer labels.deinit();
+    const id_pointer = ids.values.items.ptr;
+    var inner_children = [_]owned.OwnedArray{owned.OwnedArray.takePrimitive(i32, &ids)};
+    var inner_children_live = true;
+    defer if (inner_children_live) inner_children[0].deinit();
+    var inner = try owned.StructArray.take(allocator, &inner_children, 3, &.{ true, false, true });
+    inner_children_live = false;
+    var inner_live = true;
+    defer if (inner_live) inner.deinit();
+    const inner_validity = inner.validity.ptr;
+
+    var outer_children = [_]owned.OwnedArray{ .{ .struct_ = inner }, owned.OwnedArray.takeVariable(&labels) };
+    inner_live = false;
+    var outer_children_live = true;
+    defer if (outer_children_live) for (&outer_children) |*child| child.deinit();
+    var outer = try owned.StructArray.take(allocator, &outer_children, 3, &.{ false, true, true });
+    outer_children_live = false;
+    var outer_live = true;
+    defer if (outer_live) outer.deinit();
+    const outer_validity = outer.validity.ptr;
+
+    var columns = [_]owned.OwnedArray{.{ .struct_ = outer }};
+    outer_live = false;
     var columns_live = true;
     defer if (columns_live) columns[0].deinit();
-    var batch = try owned.OwnedRecordBatch.take(std.testing.allocator, &native_schema, &columns, 4);
+    var batch = try owned.OwnedRecordBatch.take(allocator, &native_schema, &columns, 3);
     schema_live = false;
     columns_live = false;
-    defer batch.deinit();
-    try std.testing.expectError(error.UnsupportedNestedType, exportRecordBatch(&batch));
-    try std.testing.expectEqual(@as(usize, 4), batch.row_count);
-    try std.testing.expectEqual(@as(usize, 0), batch.columns[0].struct_.children.len);
+    var batch_live = true;
+    defer if (batch_live) batch.deinit();
+
+    var exported = exportRecordBatch(&batch) catch |err| {
+        try std.testing.expectEqual(@as(usize, 3), batch.row_count);
+        try std.testing.expectEqual(@intFromPtr(id_pointer), @intFromPtr(batch.columns[0].struct_.children[0].struct_.children[0].int32.values.items.ptr));
+        return err;
+    };
+    batch_live = false;
+    defer exported.deinit();
+    const outer_array = exported.array.children.?[0].?;
+    const inner_array = outer_array.children.?[0].?;
+    const id_array = inner_array.children.?[0].?;
+    try std.testing.expectEqual(@as(i64, 1), outer_array.n_buffers);
+    try std.testing.expectEqual(@as(i64, 2), outer_array.n_children);
+    try std.testing.expectEqual(@as(i64, 1), outer_array.null_count);
+    try std.testing.expectEqual(@intFromPtr(outer_validity), @intFromPtr(outer_array.buffers.?[0].?));
+    try std.testing.expectEqual(@intFromPtr(inner_validity), @intFromPtr(inner_array.buffers.?[0].?));
+    try std.testing.expectEqual(@intFromPtr(id_pointer), @intFromPtr(id_array.buffers.?[1].?));
+    const outer_schema = exported.schema.children.?[0].?;
+    const inner_schema = outer_schema.children.?[0].?;
+    try std.testing.expectEqualStrings("+s", std.mem.span(outer_schema.format.?));
+    try std.testing.expectEqualStrings("inner", std.mem.span(inner_schema.name.?));
+    try std.testing.expectEqualStrings("id", std.mem.span(inner_schema.children.?[0].?.name.?));
+    try std.testing.expectEqual(@as(i64, 0), outer_schema.flags);
+
+    var moved_id_schema = inner_schema.children.?[0].?.*;
+    inner_schema.children.?[0].?.release = null;
+    c.releaseSchema(&exported.schema);
+    try std.testing.expectEqualStrings("id", std.mem.span(moved_id_schema.name.?));
+    c.releaseSchema(&moved_id_schema);
+    var moved_id = id_array.*;
+    id_array.release = null;
+    c.releaseArray(&exported.array);
+    const values: [*]const i32 = @ptrCast(@alignCast(moved_id.buffers.?[1].?));
+    try std.testing.expectEqual(@as(i32, 42), values[2]);
+    c.releaseArray(&moved_id);
+}
+
+test "nested record-batch export is zero-copy and preserves source on every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, nestedExportScenario, .{});
+}
+
+test "zero-child struct export preserves explicit rows" {
+    var native_schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{
+        .name = "empty",
+        .data_type = .struct_,
+    }}, &.{});
+    var struct_array = try owned.StructArray.take(std.testing.allocator, &.{}, 4, null);
+    var columns = [_]owned.OwnedArray{.{ .struct_ = struct_array }};
+    struct_array = undefined;
+    var batch = try owned.OwnedRecordBatch.take(std.testing.allocator, &native_schema, &columns, 4);
+    var exported = try exportRecordBatch(&batch);
+    defer exported.deinit();
+    const child = exported.array.children.?[0].?;
+    try std.testing.expectEqual(@as(i64, 4), child.length);
+    try std.testing.expectEqual(@as(i64, 0), child.n_children);
+    try std.testing.expect(child.children == null);
+    try std.testing.expect(child.buffers.?[0] == null);
+    const child_schema = exported.schema.children.?[0].?;
+    try std.testing.expectEqualStrings("+s", std.mem.span(child_schema.format.?));
+    try std.testing.expectEqual(@as(i64, 0), child_schema.n_children);
+    try std.testing.expect(child_schema.children == null);
 }

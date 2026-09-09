@@ -9,6 +9,72 @@ export fn arrowz_batch_fixture(out: *c.ArrowArray, out_schema: *c.ArrowSchema) c
     return 0;
 }
 
+export fn arrowz_nested_batch_fixture(out: *c.ArrowArray, out_schema: *c.ArrowSchema) c_int {
+    if (out.release != null or out_schema.release != null) return 1;
+    produceNestedBatch(out, out_schema) catch return 3;
+    return 0;
+}
+
+fn produceNestedBatch(out: *c.ArrowArray, out_schema: *c.ArrowSchema) !void {
+    const allocator = std.heap.page_allocator;
+    var native_schema = try z.Schema.init(allocator, &.{.{
+        .name = "outer",
+        .data_type = .struct_,
+        .metadata = &.{.{ .key = "level", .value = "outer" }},
+        .children = &.{
+            .{
+                .name = "inner",
+                .data_type = .struct_,
+                .metadata = &.{.{ .key = "level", .value = "inner" }},
+                .children = &.{.{ .name = "id", .data_type = .int32, .nullable = false }},
+            },
+            .{ .name = "label", .data_type = .utf8 },
+        },
+    }}, &.{.{ .key = "source", .value = "arrowz-nested" }});
+    var schema_live = true;
+    defer if (schema_live) native_schema.deinit();
+    var id_builder = z.PrimitiveBuilder(i32).init(allocator);
+    defer id_builder.deinit();
+    var label_builder = z.Utf8Builder.init(allocator);
+    defer label_builder.deinit();
+    for ([_]?i32{ 40, 41, 42 }) |value| try id_builder.append(value);
+    for ([_]?[]const u8{ "zero", null, "two" }) |value| try label_builder.append(value);
+    var ids = id_builder.finish();
+    defer ids.deinit();
+    var labels = label_builder.finish();
+    defer labels.deinit();
+    var inner_children = [_]z.OwnedArray{z.OwnedArray.takePrimitive(i32, &ids)};
+    var inner_children_live = true;
+    defer if (inner_children_live) inner_children[0].deinit();
+    var inner = try z.StructArray.take(allocator, &inner_children, 3, &.{ true, false, true });
+    inner_children_live = false;
+    var inner_live = true;
+    defer if (inner_live) inner.deinit();
+    var outer_children = [_]z.OwnedArray{ .{ .struct_ = inner }, z.OwnedArray.takeVariable(&labels) };
+    inner_live = false;
+    var outer_children_live = true;
+    defer if (outer_children_live) for (&outer_children) |*child| child.deinit();
+    var outer = try z.StructArray.take(allocator, &outer_children, 3, &.{ false, true, true });
+    outer_children_live = false;
+    var outer_live = true;
+    defer if (outer_live) outer.deinit();
+    var columns = [_]z.OwnedArray{.{ .struct_ = outer }};
+    outer_live = false;
+    var columns_live = true;
+    defer if (columns_live) columns[0].deinit();
+    var batch = try z.OwnedRecordBatch.take(allocator, &native_schema, &columns, 3);
+    schema_live = false;
+    columns_live = false;
+    var batch_live = true;
+    defer if (batch_live) batch.deinit();
+    var exported = try z.c_data_batch.exportRecordBatch(&batch);
+    batch_live = false;
+    out.* = exported.array;
+    out_schema.* = exported.schema;
+    exported.array.release = null;
+    exported.schema.release = null;
+}
+
 fn produceBatch(out: *c.ArrowArray, out_schema: *c.ArrowSchema) !void {
     const allocator = std.heap.page_allocator;
     var native_schema = try z.Schema.init(allocator, &.{
