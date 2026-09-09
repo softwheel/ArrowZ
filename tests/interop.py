@@ -42,7 +42,7 @@ for kind, cls in enumerate((ArrowArray, ArrowSchema)):
         assert lib.arrowz_abi_offset(kind, i) == getattr(cls, name).offset
 
 types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(),
-         pa.int64(), pa.uint64(), pa.float32(), pa.float64()]
+         pa.int64(), pa.uint64(), pa.float32(), pa.float64(), pa.bool_()]
 cases = 0
 for kind, dtype in enumerate(types):
     for scenario in range(5):
@@ -51,7 +51,8 @@ for kind, dtype in enumerate(types):
         address = raw.buffers[1]
         validity = raw.buffers[0]
         expected = [] if scenario == 0 else [
-            None if scenario == 2 or (scenario >= 3 and i % 3 == 0) else i for i in range(20)
+            None if scenario == 2 or (scenario >= 3 and i % 3 == 0)
+            else (i % 2 == 0 if kind == 10 else i) for i in range(20)
         ]
         if scenario == 4:
             expected = expected[7:16]

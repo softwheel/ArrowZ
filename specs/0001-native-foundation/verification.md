@@ -1,6 +1,6 @@
 # M0 verification and handoff
 
-Status: Implemented; local gates passed; required GitHub CI pending.
+Status: Verified for M0's Linux x86_64 gates; PR #1 merged.
 Date: 2026-09-09. Platform: Linux x86_64. Zig: 0.16.0.
 Independent reference: PyArrow 23.0.1 (test-only).
 
@@ -28,20 +28,28 @@ leak freedom, append logical atomicity and preservation of source ownership on
 failed export. The local integration commands used an isolated Python dependency
 path; no foreign Arrow implementation is linked into the SDK or fixture.
 
-## Remaining gate
+## Completed CI gate
 
-Run the GitHub Zig workflow on the proposed PR checkout. Both Debug and ReleaseSafe
-must pass. Retain verification artifacts and record tested commit and run links.
-Do not mark the spec Verified or merge while a required CI job is absent/failing.
+[Run 34377921707](https://github.com/softwheel/ArrowZ/actions/runs/34377921707)
+completed successfully on 2026-09-09; rechecked during the next iteration.
+Debug and ReleaseSafe each passed 6 Zig tests, the native example, 50 PyArrow
+cases and the no-shared-runtime dependency check.
+
+- Proposed head: `9276915dd56e52c5eb96bff005614d32433cd977`.
+- Base: `4db5b3fd2e5e8c9a4e3d1e1baf034261dd1ac593`.
+- Tested merge checkout: `72fec81342fce8314e810dc296bf7da1591694e7`.
+- Merged [PR #1](https://github.com/softwheel/ArrowZ/pull/1):
+  `ce1075108d2ed9ef1f6ac6f0bc71e5694b5aa3ea`.
+- Retained artifacts: Debug `10114652129`, ReleaseSafe `10114684229`.
+
+These results apply to M0, not subsequent semantic changes.
 
 ## Next iteration
 
-1. Inspect the M0 PR and CI; fix any failures without relaxing assertions.
-2. Reconcile main/head identity and record CI evidence; mark Spec 0001 Verified
-   only when gates pass, then merge subject to repository protections/review rules.
-3. Write Spec 0002 for native boolean and UTF-8/binary arrays, with bitmap/offset
-   overflow, invalid UTF-8, OOM and independent interoperability acceptance tests.
-4. Continue the roadmap toward native record batches and IPC; preserve pure Zig.
+1. Finish Spec 0002 native boolean gates and reconcile its PR/CI before merge.
+2. Specify UTF-8/binary arrays with offset overflow, invalid UTF-8, OOM and
+   independent interoperability acceptance tests.
+3. Continue the roadmap toward native record batches and IPC; preserve pure Zig.
 
 Not proved: full Arrow format coverage, imports/C Stream/IPC, untrusted-pointer
 validation, other operating systems/architectures, performance superiority, or

@@ -14,5 +14,7 @@ The implementation and public core API are Zig; C interoperability is optional.
 
 M0 is governed by specs/0001-native-foundation/spec.md. Before each later milestone,
 write requirements, design, tasks and acceptance evidence in a numbered spec.
+M0 passed its scoped gates in PR #1. The first M1 slice, native bit-packed boolean
+arrays, is governed by specs/0002-native-boolean/spec.md. UTF-8/binary follows it.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
