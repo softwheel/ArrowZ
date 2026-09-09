@@ -1,6 +1,6 @@
 # Spec 0006: Native C Data record-batch export
 
-Status: Implemented; published-commit CI verification pending.
+Status: Verified for the scoped Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -40,8 +40,7 @@ Field names containing NUL are rejected because the ABI name is C-terminated.
       PyArrow validates values, schema/field metadata, nullability and original
       child buffer addresses without copying.
 - [x] Empty-schema/nonzero-row batch and metadata/NUL/length overflow behavior.
-- [ ] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, examples, expanded interop,
-      formatting and no-shared-runtime gates locally and in CI. Local gates pass;
-      CI remains required on the published proposed commit.
+- [x] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, examples, expanded interop,
+      formatting and no-shared-runtime gates locally and in CI.
 
 Mark Verified only after required CI passes on the published proposed commit.

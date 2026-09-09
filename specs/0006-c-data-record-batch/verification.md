@@ -25,9 +25,15 @@ schema/field metadata, nullability, values and original buffer addresses.
 
 ## Published-commit gate
 
-Not yet satisfied. Record the PR, proposed commit, both CI job results and merge
-commit here only after the remote checks complete. Until then Spec 0006 is not
-Verified.
+PR #7 proposed commit `15985b4c7552f700abb8984dc00348f2fc0e9016`.
+GitHub Actions run `34408557475` completed successfully for both matrix jobs:
+Debug job `102657312066` and ReleaseSafe job `102657312311`. Each job ran the
+same 28 native tests, example, 66-case PyArrow oracle, formatting check and
+no-shared-runtime check. No review submissions or unresolved review threads were
+present, and GitHub reported the PR mergeable.
+
+This evidence-only follow-up commit must also pass CI as the final proposed head;
+record its run and merge SHA in the PR/merge history.
 
 ## Next handoff
 
