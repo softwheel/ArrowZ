@@ -17,9 +17,36 @@ export fn arrowz_fixture(kind: u32, scenario: u32, out: *c.ArrowArray, schema: *
         8 => produce(f32, scenario, out, schema),
         9 => produce(f64, scenario, out, schema),
         10 => produce(bool, scenario, out, schema),
+        11 => produceVariable(.binary, scenario, out, schema),
+        12 => produceVariable(.utf8, scenario, out, schema),
         else => return 2,
     }) catch return 3;
     return 0;
+}
+
+fn produceVariable(kind: z.variable_binary.Kind, scenario: u32, out: *c.ArrowArray, schema: *c.ArrowSchema) !void {
+    if (scenario > 4) return error.BadScenario;
+    var builder = z.variable_binary.VariableBinaryBuilder.init(std.heap.page_allocator, kind);
+    defer builder.deinit();
+    const count: usize = if (scenario == 0) 0 else 20;
+    const binary = [_][]const u8{ "", &.{ 0, 0xff }, "abc" };
+    const utf8 = [_][]const u8{ "", "数据", "🏹" };
+    for (0..count) |i| {
+        const value = if (kind == .binary) binary[i % binary.len] else utf8[i % utf8.len];
+        try builder.append(if (scenario == 2 or (scenario >= 3 and i % 3 == 0)) null else value);
+    }
+    var array = builder.finish();
+    defer array.deinit();
+    var exported = try c.exportVariableBinary(&array);
+    if (scenario == 4) {
+        exported.array.offset = 7;
+        exported.array.length = 9;
+        exported.array.null_count = 3;
+    }
+    out.* = exported.array;
+    schema.* = exported.schema;
+    exported.array.release = null;
+    exported.schema.release = null;
 }
 
 fn produce(comptime T: type, scenario: u32, out: *c.ArrowArray, schema: *c.ArrowSchema) !void {
