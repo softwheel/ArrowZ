@@ -3,6 +3,54 @@ const std = @import("std");
 const z = @import("arrowz");
 const c = z.c_data;
 
+export fn arrowz_batch_fixture(out: *c.ArrowArray, out_schema: *c.ArrowSchema) c_int {
+    if (out.release != null or out_schema.release != null) return 1;
+    produceBatch(out, out_schema) catch return 3;
+    return 0;
+}
+
+fn produceBatch(out: *c.ArrowArray, out_schema: *c.ArrowSchema) !void {
+    const allocator = std.heap.page_allocator;
+    var native_schema = try z.Schema.init(allocator, &.{
+        .{ .name = "id", .data_type = .int32, .nullable = false, .metadata = &.{.{ .key = "role", .value = "key" }} },
+        .{ .name = "name", .data_type = .utf8 },
+        .{ .name = "active", .data_type = .boolean },
+    }, &.{.{ .key = "source", .value = "arrowz" }});
+    var schema_live = true;
+    defer if (schema_live) native_schema.deinit();
+    var ids_builder = z.PrimitiveBuilder(i32).init(allocator);
+    defer ids_builder.deinit();
+    var names_builder = z.Utf8Builder.init(allocator);
+    defer names_builder.deinit();
+    var active_builder = z.BooleanBuilder.init(allocator);
+    defer active_builder.deinit();
+    for ([_]?i32{ 10, 11, 12, 13 }) |value| try ids_builder.append(value);
+    for ([_]?[]const u8{ "zero", null, "数据", "" }) |value| try names_builder.append(value);
+    for ([_]?bool{ true, false, null, true }) |value| try active_builder.append(value);
+    var ids = ids_builder.finish();
+    defer ids.deinit();
+    var names = names_builder.finish();
+    defer names.deinit();
+    var active = active_builder.finish();
+    defer active.deinit();
+    var columns = [_]z.OwnedArray{
+        .takePrimitive(i32, &ids), .takeVariable(&names), .takeBoolean(&active),
+    };
+    var columns_live = true;
+    defer if (columns_live) for (&columns) |*column| column.deinit();
+    var batch = try z.OwnedRecordBatch.take(allocator, &native_schema, &columns, 4);
+    schema_live = false;
+    columns_live = false;
+    var batch_live = true;
+    defer if (batch_live) batch.deinit();
+    var exported = try z.c_data_batch.exportRecordBatch(&batch);
+    batch_live = false;
+    out.* = exported.array;
+    out_schema.* = exported.schema;
+    exported.array.release = null;
+    exported.schema.release = null;
+}
+
 export fn arrowz_fixture(kind: u32, scenario: u32, out: *c.ArrowArray, schema: *c.ArrowSchema) c_int {
     if (out.release != null or schema.release != null) return 1;
     (switch (kind) {

@@ -1,6 +1,6 @@
 # Owning record-batch verification and handoff
 
-Date: 2026-09-09. Status: local gates passed; required CI pending.
+Date: 2026-09-09. Status: Verified for scoped Linux x86_64 gates; merged.
 Base main: `24e2a766aca9e2938fac73bc7b79db139c27314c`.
 Requirements committed before implementation: `466896f` (local identity).
 Implementation commit: `8c25463f09985bea6d81a4c1f9ea1aae02a3fb0a`.
@@ -40,9 +40,12 @@ column container and every native buffer exactly once.
 
 ## Remaining gate and next slice
 
-Publish a focused PR preserving spec-before-code order and verify its full/source
-trees. Record the actual CI head/run/job results; mark Verified and merge only after
-required reviews and protections pass. No human review is claimed.
+CI [run 34403193825](https://github.com/softwheel/ArrowZ/actions/runs/34403193825)
+completed successfully on published head
+`73d9aa65de9dbe553f09d811a9215babcd6716d8`; both jobs passed every step.
+The published full tree matched the local verification tree. PR #6 was mergeable
+with no requested or required review recorded and was squash-merged as
+`82aec383d22035802224f747f0fe3212c209e7f3`.
 
 Next write Spec 0006 for native nested C Data record-batch export. Preallocate
 uniform child state so allocation failure leaves the source batch intact; test

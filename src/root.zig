@@ -4,6 +4,7 @@ pub const PrimitiveArray = @import("primitive.zig").PrimitiveArray;
 pub const PrimitiveBuilder = @import("primitive.zig").PrimitiveBuilder;
 pub const PrimitiveView = @import("primitive.zig").PrimitiveView;
 pub const c_data = @import("c_data.zig");
+pub const c_data_batch = @import("c_data_batch.zig");
 pub const BooleanArray = @import("boolean.zig").BooleanArray;
 pub const BooleanBuilder = @import("boolean.zig").BooleanBuilder;
 pub const BooleanView = @import("boolean.zig").BooleanView;
@@ -28,6 +29,7 @@ test {
     _ = bitmap;
     _ = @import("primitive.zig");
     _ = c_data;
+    _ = c_data_batch;
     _ = @import("boolean.zig");
     _ = @import("variable_binary.zig");
     _ = schema;

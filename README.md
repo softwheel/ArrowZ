@@ -15,9 +15,9 @@ tests as an independent compatibility reference.
 Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
 float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
 metadata, borrowed and owning heterogeneous record batches, builders, slices and
-ownership-transferring C Data exports. This is a foundation, not a complete Arrow
-SDK. Nested arrays, owning heterogeneous batches, record-batch C export,
-batches, import/stream adapters and native IPC are planned in the [roadmap](docs/ROADMAP.md).
+ownership-transferring C Data array and record-batch exports. This is a foundation,
+not a complete Arrow SDK. Nested arrays, import/stream adapters and native IPC are
+planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
 
@@ -66,6 +66,12 @@ moving anything: errors and allocation failures preserve every input, while
 success owns the schema, column container and all buffers. `borrow` creates a
 temporary zero-copy `RecordBatch` view.
 
+`arrowz.c_data_batch.exportRecordBatch` transfers an owning batch into a `+s`
+C Data struct array. It preserves field names, nullability and metadata, exposes
+the original child buffers without copying, and lets consumers release or move
+the array and schema halves independently. Any export error leaves the input batch
+unchanged.
+
 For optional zero-copy export:
 
 ```zig
@@ -89,13 +95,14 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 65 independent PyArrow cases, allocation failure paths and
+ReleaseSafe, including 66 independent PyArrow cases, allocation failure paths and
 ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
 the [boolean spec](specs/0002-native-boolean/spec.md) and
 [UTF-8/binary spec](specs/0003-native-variable-binary/spec.md), alongside
 the [schema/record-batch spec](specs/0004-native-schema-record-batch/spec.md) and
-the [owning-batch spec](specs/0005-owning-record-batch/spec.md), plus
+the [owning-batch spec](specs/0005-owning-record-batch/spec.md) and
+the [record-batch export spec](specs/0006-c-data-record-batch/spec.md), plus
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
