@@ -1,6 +1,6 @@
 # Spec 0007: Native struct arrays
 
-Status: Implemented; published-commit CI verification pending.
+Status: Verified for the scoped Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -42,8 +42,7 @@ child schemas and PyArrow nested interoperability require the next numbered spec
       access and bounds behavior, including nested structs.
 - [x] Record-batch recursive type/layout validation for borrowed and owned columns.
 - [x] Existing C Data batch export rejects struct columns without moving the batch.
-- [ ] Exhaustive allocation-failure/leak tests and pinned Zig 0.16.0 Debug and
+- [x] Exhaustive allocation-failure/leak tests and pinned Zig 0.16.0 Debug and
       ReleaseSafe formatting, tests, example, 66-case interop and no-runtime gates.
-      Local gates pass; CI remains required on the published proposed commit.
 
 Mark Verified only after CI passes on the published proposed commit.

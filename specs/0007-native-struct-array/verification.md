@@ -26,8 +26,15 @@ struct-containing batch.
 
 ## Published-commit gate
 
-Not yet satisfied. Record the PR, proposed head, both CI matrix jobs and merge SHA
-only after remote checks complete. Spec 0007 is not Verified until then.
+PR #8 proposed commit `58d3102e01b5cca3d47255a0df001854b2f60f1f`.
+GitHub Actions run `34413850085` completed successfully for both matrix jobs:
+Debug job `102674148799` and ReleaseSafe job `102674148476`. Each ran the same
+32 native tests, example, 66-case PyArrow oracle, formatting and no-runtime gates.
+There were no review submissions or unresolved review threads, and GitHub reported
+the PR mergeable.
+
+This evidence-only follow-up commit must pass CI as the final proposed head; its
+run and merge SHA remain in the PR/merge history.
 
 ## Next handoff
 
