@@ -1,6 +1,6 @@
 # Spec 0002: Native boolean arrays
 
-Status: Accepted for implementation; verification pending.
+Status: Verified for scoped Linux x86_64 gates; merged in PR #3.
 
 ## Requirements
 
@@ -22,14 +22,14 @@ leave the source intact; schema release is independent from array lifetime.
 
 ## Tasks and acceptance gates
 
-- [ ] Native builder, array and borrowed views, empty/true/false/null cases.
-- [ ] Exact bit order, byte boundaries, zero trailing bits, nested/empty slices,
+- [x] Native builder, array and borrowed views, empty/true/false/null cases.
+- [x] Exact bit order, byte boundaries, zero trailing bits, nested/empty slices,
       overflow-sized bounds, builder reuse and synthetic length overflow test.
-- [ ] Exhaustive allocator failure injection for append and export; preserve
+- [x] Exhaustive allocator failure injection for append and export; preserve
       source state on failure and verify relocation and release without leaks.
-- [ ] Independent PyArrow empty/all-valid/all-null/mixed/offset boolean exports,
+- [x] Independent PyArrow empty/all-valid/all-null/mixed/offset boolean exports,
       full validation and shared buffer addresses; retain all primitive cases.
-- [ ] Zig 0.16.0 Debug and ReleaseSafe tests, examples, interoperability, format
+- [x] Zig 0.16.0 Debug and ReleaseSafe tests, examples, interoperability, format
       checks and no shared runtime dependency gate, locally and in CI.
 
 Mark Verified only after CI passes on the proposed commit/merge checkout.
