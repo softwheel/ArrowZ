@@ -1,6 +1,6 @@
 # Spec 0008: Recursive struct C Data export
 
-Status: Accepted for implementation; verification pending.
+Status: Implemented; published-commit CI verification pending.
 
 ## Requirements
 
@@ -31,16 +31,17 @@ therefore consuming or moving either ABI half cannot invalidate the other.
 
 ## Tasks and acceptance gates
 
-- [ ] Recursive array/schema preallocation before move; exhaustive OOM preserves
+- [x] Recursive array/schema preallocation before move; exhaustive OOM preserves
       the source and proves cleanup of every partial tree.
-- [ ] Correct struct buffers, lengths, null counts, child order, `+s` schemas,
+- [x] Correct struct buffers, lengths, null counts, child order, `+s` schemas,
       names, flags and metadata at two nesting levels and for zero-child structs.
-- [ ] Zero-copy leaf and parent-validity addresses across the recursive tree.
-- [ ] Independent root release, repeated cleanup, base relocation, ancestor-driven
+- [x] Zero-copy leaf and parent-validity addresses across the recursive tree.
+- [x] Independent root release, repeated cleanup, base relocation, ancestor-driven
       cleanup and moved nested descendant survival.
-- [ ] Test-only Zig fixture exports nested nullable structs; PyArrow validates the
+- [x] Test-only Zig fixture exports nested nullable structs; PyArrow validates the
       recursive schema, values, metadata, parent nulls and original buffer addresses.
 - [ ] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, example, formatting, expanded
-      interoperability and no-shared-runtime gates locally and in CI.
+      interoperability and no-shared-runtime gates locally and in CI. Local gates
+      pass; CI remains required on the published proposed commit.
 
 Mark Verified only after required CI passes on the published proposed commit.
