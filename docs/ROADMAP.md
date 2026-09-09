@@ -1,0 +1,18 @@
+# ArrowZ roadmap
+
+Goal: a pure Zig native Apache Arrow implementation with an idiomatic Zig SDK.
+The implementation and public core API are Zig; C interoperability is optional.
+
+| Milestone | Deliverable | Verification gate |
+| --- | --- | --- |
+| M0 | Native primitive arrays, builders, bitmap, slices; C export adapter | Zig allocator/lifetime tests and independent PyArrow export tests |
+| M1 | Boolean, UTF-8/binary, schema/metadata, nested arrays and record batches | Type/layout/null/offset interoperability matrix |
+| M2 | C Data import and C Stream adapters in Zig | Bidirectional exchange, lifetime/error/EOS tests |
+| M3 | Native Zig IPC file/stream reader and writer, native FlatBuffers handling | Arrow integration fixtures, malformed/truncated input and resource limits |
+| M4 | Extended types, documented coverage, benchmarks and package release | Compatibility matrix, reproducible benchmarks, supported-target CI |
+| M5 | Upstream collaboration and contribution | Maintainer-agreed scope and upstream review |
+
+M0 is governed by specs/0001-native-foundation/spec.md. Before each later milestone,
+write requirements, design, tasks and acceptance evidence in a numbered spec.
+Performance follows correctness; preserve zero-copy interoperability where valid.
+Do not add C/C++ implementations or another-language Arrow runtime to save time.
