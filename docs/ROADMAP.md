@@ -23,5 +23,7 @@ heterogeneous batches are governed by specs/0005-owning-record-batch/spec.md.
 Native record-batch C Data export is governed by
 specs/0006-c-data-record-batch/spec.md.
 Native struct arrays are governed by specs/0007-native-struct-array/spec.md.
+Recursive struct C Data export is governed by
+specs/0008-struct-c-data-export/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
