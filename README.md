@@ -14,9 +14,9 @@ tests as an independent compatibility reference.
 
 Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
 float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
-metadata, borrowed and owning heterogeneous record batches, builders, slices and
+metadata, recursively owned native struct arrays, borrowed and owning heterogeneous record batches, builders, slices and
 ownership-transferring C Data array and record-batch exports. This is a foundation,
-not a complete Arrow SDK. Nested arrays, import/stream adapters and native IPC are
+not a complete Arrow SDK. Nested C Data export, import/stream adapters and native IPC are
 planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
@@ -66,6 +66,13 @@ moving anything: errors and allocation failures preserve every input, while
 success owns the schema, column container and all buffers. `borrow` creates a
 temporary zero-copy `RecordBatch` view.
 
+`StructArray.take` validates and moves heterogeneous child arrays without copying
+their buffers. It owns a packed parent-validity bitmap and recursive children;
+`view`, `slice`, `isValid` and `child` provide checked borrowed access. Recursive
+`FieldSpec.children` schema layouts are validated by borrowed and owning batches.
+Nested C Data export is not yet supported and returns `error.UnsupportedNestedType`
+without moving the source batch.
+
 `arrowz.c_data_batch.exportRecordBatch` transfers an owning batch into a `+s`
 C Data struct array. It preserves field names, nullability and metadata, exposes
 the original child buffers without copying, and lets consumers release or move
@@ -101,8 +108,9 @@ ABI layout/zero-copy checks. Other targets remain unverified.
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
 the [boolean spec](specs/0002-native-boolean/spec.md) and
 [UTF-8/binary spec](specs/0003-native-variable-binary/spec.md), alongside
-the [schema/record-batch spec](specs/0004-native-schema-record-batch/spec.md) and
-the [owning-batch spec](specs/0005-owning-record-batch/spec.md) and
-the [record-batch export spec](specs/0006-c-data-record-batch/spec.md), plus
+the [schema/record-batch spec](specs/0004-native-schema-record-batch/spec.md),
+the [owning-batch spec](specs/0005-owning-record-batch/spec.md),
+the [record-batch export spec](specs/0006-c-data-record-batch/spec.md), and
+the [native struct-array spec](specs/0007-native-struct-array/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.

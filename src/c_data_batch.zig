@@ -49,6 +49,7 @@ const ChildArrayState = struct {
                 };
                 self.base = childBase(self, array.len(), array.null_count, 3);
             },
+            .struct_ => unreachable,
         }
     }
 
@@ -181,6 +182,7 @@ const SchemaRootState = struct {
 /// Consumes a validated owning batch only after all fallible work succeeds.
 /// On error, source remains fully owned and usable.
 pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
+    for (source.columns) |*column| if (column.dataType() == .struct_) return error.UnsupportedNestedType;
     const row_count = std.math.cast(i64, source.row_count) orelse return error.LengthOverflow;
     const child_count = std.math.cast(i64, source.columns.len) orelse return error.LengthOverflow;
     const allocator = source.allocator;
@@ -290,6 +292,7 @@ fn format(data_type: schema_mod.DataType) [:0]const u8 {
         .boolean => "b",
         .binary => "z",
         .utf8 => "u",
+        .struct_ => "+s",
     };
 }
 
@@ -444,4 +447,27 @@ test "all native child layouts and length and metadata bounds" {
         try std.testing.expectError(error.LengthOverflow, exportRecordBatch(&overflow_batch));
         try std.testing.expectEqual(@as(usize, 0), overflow_batch.columns.len);
     }
+}
+
+test "record-batch export rejects struct columns before moving ownership" {
+    var native_schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{
+        .name = "nested",
+        .data_type = .struct_,
+    }}, &.{});
+    var schema_live = true;
+    defer if (schema_live) native_schema.deinit();
+    var struct_array = try owned.StructArray.take(std.testing.allocator, &.{}, 4, null);
+    var struct_live = true;
+    defer if (struct_live) struct_array.deinit();
+    var columns = [_]owned.OwnedArray{.{ .struct_ = struct_array }};
+    struct_live = false;
+    var columns_live = true;
+    defer if (columns_live) columns[0].deinit();
+    var batch = try owned.OwnedRecordBatch.take(std.testing.allocator, &native_schema, &columns, 4);
+    schema_live = false;
+    columns_live = false;
+    defer batch.deinit();
+    try std.testing.expectError(error.UnsupportedNestedType, exportRecordBatch(&batch));
+    try std.testing.expectEqual(@as(usize, 4), batch.row_count);
+    try std.testing.expectEqual(@as(usize, 0), batch.columns[0].struct_.children.len);
 }

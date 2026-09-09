@@ -4,6 +4,7 @@ const boolean = @import("boolean.zig");
 const variable = @import("variable_binary.zig");
 const schema_mod = @import("schema.zig");
 const record = @import("record_batch.zig");
+const bitmap = @import("bitmap.zig");
 
 /// Concrete ownership for every implemented native array type. Do not copy.
 pub const OwnedArray = union(enum) {
@@ -20,6 +21,7 @@ pub const OwnedArray = union(enum) {
     boolean: boolean.BooleanArray,
     binary: variable.VariableBinaryArray,
     utf8: variable.VariableBinaryArray,
+    struct_: StructArray,
 
     /// Moves buffers from source and leaves it an empty, valid array.
     pub fn takePrimitive(comptime T: type, source: *primitive.PrimitiveArray(T)) OwnedArray {
@@ -76,6 +78,7 @@ pub const OwnedArray = union(enum) {
             .boolean => .boolean,
             .binary => .binary,
             .utf8 => .utf8,
+            .struct_ => .struct_,
         };
     }
 
@@ -99,6 +102,84 @@ pub const OwnedArray = union(enum) {
             .float64 => |*array| .fromPrimitive(f64, array),
             .boolean => |*array| .fromBoolean(array),
             .binary, .utf8 => |*array| .fromVariable(array),
+            .struct_ => |*array| .{ .struct_ = array.view() },
+        };
+    }
+
+    pub fn matchesField(self: *const OwnedArray, field: schema_mod.Field) bool {
+        return self.view().matchesField(field);
+    }
+};
+
+/// Owns its packed parent validity, view descriptors and recursive child arrays.
+pub const StructArray = struct {
+    allocator: std.mem.Allocator,
+    validity: []u8,
+    children: []OwnedArray,
+    child_views: []record.ArrayView,
+    length: usize,
+    null_count: usize,
+
+    /// On failure every input child remains owned. Success moves all children.
+    pub fn take(
+        allocator: std.mem.Allocator,
+        input_children: []OwnedArray,
+        length: usize,
+        row_validity: ?[]const bool,
+    ) !StructArray {
+        if (length > std.math.maxInt(i64)) return error.LengthOverflow;
+        for (input_children) |*child| if (child.len() != length) return error.ChildLengthMismatch;
+        if (row_validity) |validity| if (validity.len != length) return error.ValidityLengthMismatch;
+
+        var null_count: usize = 0;
+        if (row_validity) |validity| {
+            for (validity) |valid| null_count += @intFromBool(!valid);
+        }
+        const byte_count = if (null_count == 0) 0 else bitmap.byteLength(length);
+        const children = try allocator.alloc(OwnedArray, input_children.len);
+        errdefer allocator.free(children);
+        const child_views = try allocator.alloc(record.ArrayView, input_children.len);
+        errdefer allocator.free(child_views);
+        const validity = try allocator.alloc(u8, byte_count);
+        errdefer allocator.free(validity);
+        @memset(validity, 0);
+        if (row_validity) |rows| for (rows, 0..) |valid, i| if (byte_count != 0) bitmap.set(validity, i, valid);
+
+        // No fallible work after ownership starts moving.
+        for (input_children, 0..) |*child, i| {
+            children[i] = child.*;
+            child.* = undefined;
+            child_views[i] = children[i].view();
+        }
+        return .{
+            .allocator = allocator,
+            .validity = validity,
+            .children = children,
+            .child_views = child_views,
+            .length = length,
+            .null_count = null_count,
+        };
+    }
+
+    pub fn deinit(self: *StructArray) void {
+        for (self.children) |*child| child.deinit();
+        self.allocator.free(self.children);
+        self.allocator.free(self.child_views);
+        self.allocator.free(self.validity);
+        self.* = undefined;
+    }
+
+    pub fn len(self: *const StructArray) usize {
+        return self.length;
+    }
+
+    pub fn view(self: *const StructArray) record.StructView {
+        return .{
+            .validity = self.validity,
+            .children = self.child_views,
+            .offset = 0,
+            .len = self.length,
+            .null_count = self.null_count,
         };
     }
 };
@@ -132,7 +213,7 @@ pub const OwnedRecordBatch = struct {
     ) !OwnedRecordBatch {
         if (input_columns.len != schema.fields.len) return error.ColumnCountMismatch;
         for (input_columns, schema.fields) |*owned_column, field| {
-            if (owned_column.dataType() != field.data_type) return error.ColumnTypeMismatch;
+            if (!owned_column.matchesField(field)) return error.ColumnTypeMismatch;
             if (owned_column.len() != row_count) return error.ColumnLengthMismatch;
         }
         const columns = try allocator.alloc(OwnedArray, input_columns.len);
@@ -300,6 +381,127 @@ test "owning batch validation errors preserve every input owner" {
     defer wrong_column.deinit();
     try std.testing.expectError(error.ColumnTypeMismatch, OwnedRecordBatch.take(std.testing.allocator, &schema, @as(*[1]OwnedArray, &wrong_column), 1));
     try std.testing.expectEqual(schema_mod.DataType.int64, wrong_column.dataType());
+}
+
+fn structAllocationScenario(allocator: std.mem.Allocator) !void {
+    var id_builder = primitive.PrimitiveBuilder(i32).init(allocator);
+    defer id_builder.deinit();
+    var name_builder = variable.Utf8Builder.init(allocator);
+    defer name_builder.deinit();
+    for (0..3) |i| {
+        try id_builder.append(@intCast(i + 10));
+        try name_builder.append(if (i == 1) null else "zig");
+    }
+    var ids = id_builder.finish();
+    defer ids.deinit();
+    var names = name_builder.finish();
+    defer names.deinit();
+    const id_pointer = ids.values.items.ptr;
+    var children = [_]OwnedArray{ .takePrimitive(i32, &ids), .takeVariable(&names) };
+    var children_live = true;
+    defer if (children_live) for (&children) |*child| child.deinit();
+
+    var array = StructArray.take(allocator, &children, 3, &.{ true, false, true }) catch |err| {
+        try std.testing.expectEqual(schema_mod.DataType.int32, children[0].dataType());
+        try std.testing.expectEqual(@intFromPtr(id_pointer), @intFromPtr(children[0].int32.values.items.ptr));
+        try std.testing.expectEqual(@as(usize, 3), children[1].len());
+        return err;
+    };
+    children_live = false;
+    defer array.deinit();
+    try std.testing.expectEqual(@as(usize, 1), array.null_count);
+    try std.testing.expectEqual(@intFromPtr(id_pointer), @intFromPtr(array.children[0].int32.values.items.ptr));
+    const view = array.view();
+    try std.testing.expect(try view.isValid(0));
+    try std.testing.expect(!(try view.isValid(1)));
+    try std.testing.expectError(error.OutOfBounds, view.isValid(3));
+    const sliced = try view.slice(1, 2);
+    try std.testing.expectEqual(@as(usize, 1), sliced.null_count);
+    const id_child = try sliced.child(0);
+    try std.testing.expectEqual(@as(usize, 2), id_child.len());
+    try std.testing.expectEqual(@as(?i32, 11), try id_child.int32.get(0));
+    try std.testing.expectError(error.OutOfBounds, sliced.child(2));
+}
+
+test "struct construction is failure atomic and views are bounds checked" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, structAllocationScenario, .{});
+}
+
+test "nested structs recursively match schema and move through owning batches" {
+    var builder = primitive.PrimitiveBuilder(i32).init(std.testing.allocator);
+    defer builder.deinit();
+    try builder.append(1);
+    try builder.append(2);
+    var values = builder.finish();
+    defer values.deinit();
+    var inner_children = [_]OwnedArray{OwnedArray.takePrimitive(i32, &values)};
+    var inner = try StructArray.take(std.testing.allocator, &inner_children, 2, null);
+    var inner_live = true;
+    defer if (inner_live) inner.deinit();
+    var outer_children = [_]OwnedArray{.{ .struct_ = inner }};
+    inner_live = false;
+    var outer = try StructArray.take(std.testing.allocator, &outer_children, 2, &.{ false, true });
+    var outer_live = true;
+    defer if (outer_live) outer.deinit();
+    var columns = [_]OwnedArray{.{ .struct_ = outer }};
+    outer_live = false;
+    var columns_live = true;
+    defer if (columns_live) columns[0].deinit();
+
+    var schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{
+        .name = "outer",
+        .data_type = .struct_,
+        .children = &.{.{
+            .name = "inner",
+            .data_type = .struct_,
+            .children = &.{.{ .name = "value", .data_type = .int32 }},
+        }},
+    }}, &.{});
+    var schema_live = true;
+    defer if (schema_live) schema.deinit();
+    var batch = try OwnedRecordBatch.take(std.testing.allocator, &schema, &columns, 2);
+    schema_live = false;
+    columns_live = false;
+    defer batch.deinit();
+    const outer_view = batch.columns[0].view().struct_;
+    const inner_view = (try outer_view.child(0)).struct_;
+    const value_view = (try inner_view.child(0)).int32;
+    try std.testing.expectEqual(@as(?i32, 2), try value_view.get(1));
+
+    var wrong_schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{
+        .name = "outer",
+        .data_type = .struct_,
+        .children = &.{.{ .name = "wrong", .data_type = .uint32 }},
+    }}, &.{});
+    defer wrong_schema.deinit();
+    var zero_child = try StructArray.take(std.testing.allocator, &.{}, 2, null);
+    var wrong_columns = [_]OwnedArray{.{ .struct_ = zero_child }};
+    zero_child = undefined;
+    defer wrong_columns[0].deinit();
+    try std.testing.expectError(error.ColumnTypeMismatch, OwnedRecordBatch.take(std.testing.allocator, &wrong_schema, &wrong_columns, 2));
+    try std.testing.expectEqual(@as(usize, 0), wrong_columns[0].struct_.children.len);
+}
+
+test "struct validation errors preserve children and explicit empty length" {
+    var child: primitive.PrimitiveArray(i8) = .{ .allocator = std.testing.allocator };
+    defer child.deinit();
+    var children = [_]OwnedArray{OwnedArray.takePrimitive(i8, &child)};
+    defer children[0].deinit();
+    try std.testing.expectError(error.ChildLengthMismatch, StructArray.take(std.testing.allocator, &children, 1, null));
+    try std.testing.expectEqual(schema_mod.DataType.int8, children[0].dataType());
+    try std.testing.expectError(error.ValidityLengthMismatch, StructArray.take(std.testing.allocator, &children, 0, &.{true}));
+    var empty = try StructArray.take(std.testing.allocator, &.{}, 7, null);
+    defer empty.deinit();
+    try std.testing.expectEqual(@as(usize, 7), empty.len());
+    try std.testing.expect(try empty.view().isValid(6));
+    if (@sizeOf(usize) > @sizeOf(i64)) {
+        try std.testing.expectError(error.LengthOverflow, StructArray.take(
+            std.testing.allocator,
+            &.{},
+            @as(usize, std.math.maxInt(i64)) + 1,
+            null,
+        ));
+    }
 }
 
 test "owning zero-column batch supports nonzero declared rows" {

@@ -24,6 +24,8 @@ pub const RecordBatch = record_batch.RecordBatch;
 pub const owned_batch = @import("owned_batch.zig");
 pub const OwnedArray = owned_batch.OwnedArray;
 pub const OwnedRecordBatch = owned_batch.OwnedRecordBatch;
+pub const StructArray = owned_batch.StructArray;
+pub const StructView = record_batch.StructView;
 
 test {
     _ = bitmap;

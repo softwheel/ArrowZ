@@ -18,6 +18,7 @@ pub const ArrayView = union(enum) {
     boolean: boolean.BooleanView,
     binary: variable.VariableBinaryView,
     utf8: variable.VariableBinaryView,
+    struct_: StructView,
 
     pub fn fromPrimitive(comptime T: type, array: *const primitive.PrimitiveArray(T)) ArrayView {
         primitive.checkType(T);
@@ -60,6 +61,7 @@ pub const ArrayView = union(enum) {
             .boolean => .boolean,
             .binary => .binary,
             .utf8 => .utf8,
+            .struct_ => .struct_,
         };
     }
 
@@ -67,6 +69,63 @@ pub const ArrayView = union(enum) {
         return switch (self) {
             inline else => |view| view.len,
         };
+    }
+
+    pub fn slice(self: ArrayView, offset: usize, length: usize) error{OutOfBounds}!ArrayView {
+        return switch (self) {
+            inline else => |view, tag| @unionInit(ArrayView, @tagName(tag), try view.slice(offset, length)),
+        };
+    }
+
+    pub fn matchesField(self: ArrayView, field: schema_mod.Field) bool {
+        if (self.dataType() != field.data_type) return false;
+        return switch (self) {
+            .struct_ => |view| view.matchesFields(field.children),
+            else => field.children.len == 0,
+        };
+    }
+};
+
+/// Borrowed struct view. Child views and their owners must outlive this value.
+pub const StructView = struct {
+    validity: []const u8,
+    children: []const ArrayView,
+    offset: usize,
+    len: usize,
+    null_count: usize,
+
+    pub fn isValid(self: StructView, index: usize) error{OutOfBounds}!bool {
+        if (index >= self.len) return error.OutOfBounds;
+        return self.validity.len == 0 or @import("bitmap.zig").isSet(self.validity, self.offset + index);
+    }
+
+    pub fn child(self: StructView, index: usize) error{OutOfBounds}!ArrayView {
+        if (index >= self.children.len) return error.OutOfBounds;
+        return self.children[index].slice(self.offset, self.len);
+    }
+
+    pub fn slice(self: StructView, offset: usize, length: usize) error{OutOfBounds}!StructView {
+        if (offset > self.len or length > self.len - offset) return error.OutOfBounds;
+        var null_count: usize = 0;
+        for (0..length) |i| null_count += @intFromBool(!(try self.isValid(offset + i)));
+        return .{
+            .validity = self.validity,
+            .children = self.children,
+            .offset = self.offset + offset,
+            .len = length,
+            .null_count = null_count,
+        };
+    }
+
+    fn matchesFields(self: StructView, fields: []const schema_mod.Field) bool {
+        if (self.children.len != fields.len) return false;
+        const end = std.math.add(usize, self.offset, self.len) catch return false;
+        if (self.validity.len != 0 and self.validity.len < @import("bitmap.zig").byteLength(end)) return false;
+        for (self.children, fields) |child_view, field| {
+            if (self.offset > child_view.len() or self.len > child_view.len() - self.offset) return false;
+            if (!child_view.matchesField(field)) return false;
+        }
+        return true;
     }
 };
 
@@ -79,7 +138,7 @@ pub const RecordBatch = struct {
     pub fn init(schema: *const schema_mod.Schema, columns: []const ArrayView, row_count: usize) !RecordBatch {
         if (columns.len != schema.fields.len) return error.ColumnCountMismatch;
         for (columns, schema.fields) |array_view, field| {
-            if (array_view.dataType() != field.data_type) return error.ColumnTypeMismatch;
+            if (!array_view.matchesField(field)) return error.ColumnTypeMismatch;
             if (array_view.len() != row_count) return error.ColumnLengthMismatch;
         }
         return .{ .schema = schema, .columns = columns, .row_count = row_count };

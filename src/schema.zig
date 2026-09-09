@@ -14,6 +14,7 @@ pub const DataType = enum {
     boolean,
     binary,
     utf8,
+    struct_,
 };
 
 pub const MetadataEntry = struct {
@@ -26,6 +27,7 @@ pub const FieldSpec = struct {
     data_type: DataType,
     nullable: bool = true,
     metadata: []const MetadataEntry = &.{},
+    children: []const FieldSpec = &.{},
 };
 
 pub const Metadata = struct {
@@ -44,10 +46,12 @@ pub const Field = struct {
     data_type: DataType,
     nullable: bool,
     metadata: []Metadata,
+    children: []Field,
 
     fn deinit(self: *Field, allocator: std.mem.Allocator) void {
         allocator.free(self.name);
         deinitMetadata(allocator, self.metadata);
+        deinitFields(allocator, self.children);
         self.* = undefined;
     }
 };
@@ -63,16 +67,8 @@ pub const Schema = struct {
         field_specs: []const FieldSpec,
         metadata_specs: []const MetadataEntry,
     ) !Schema {
-        const fields = try allocator.alloc(Field, field_specs.len);
-        var fields_initialized: usize = 0;
-        errdefer {
-            for (fields[0..fields_initialized]) |*field| field.deinit(allocator);
-            allocator.free(fields);
-        }
-        for (field_specs, 0..) |spec, i| {
-            fields[i] = try cloneField(allocator, spec);
-            fields_initialized += 1;
-        }
+        const fields = try cloneFields(allocator, field_specs);
+        errdefer deinitFields(allocator, fields);
         const metadata = try cloneMetadata(allocator, metadata_specs);
         return .{ .allocator = allocator, .fields = fields, .metadata = metadata };
     }
@@ -92,12 +88,36 @@ pub const Schema = struct {
     }
 };
 
-fn cloneField(allocator: std.mem.Allocator, spec: FieldSpec) !Field {
+const CloneError = error{ OutOfMemory, InvalidUtf8Name, UnexpectedChildren };
+
+fn cloneField(allocator: std.mem.Allocator, spec: FieldSpec) CloneError!Field {
     if (!std.unicode.utf8ValidateSlice(spec.name)) return error.InvalidUtf8Name;
+    if (spec.data_type != .struct_ and spec.children.len != 0) return error.UnexpectedChildren;
     const name = try allocator.dupe(u8, spec.name);
     errdefer allocator.free(name);
     const metadata = try cloneMetadata(allocator, spec.metadata);
-    return .{ .name = name, .data_type = spec.data_type, .nullable = spec.nullable, .metadata = metadata };
+    errdefer deinitMetadata(allocator, metadata);
+    const children = try cloneFields(allocator, spec.children);
+    return .{ .name = name, .data_type = spec.data_type, .nullable = spec.nullable, .metadata = metadata, .children = children };
+}
+
+fn cloneFields(allocator: std.mem.Allocator, specs: []const FieldSpec) CloneError![]Field {
+    const fields = try allocator.alloc(Field, specs.len);
+    var initialized: usize = 0;
+    errdefer {
+        for (fields[0..initialized]) |*field| field.deinit(allocator);
+        allocator.free(fields);
+    }
+    for (specs, 0..) |spec, i| {
+        fields[i] = try cloneField(allocator, spec);
+        initialized += 1;
+    }
+    return fields;
+}
+
+fn deinitFields(allocator: std.mem.Allocator, fields: []Field) void {
+    for (fields) |*field| field.deinit(allocator);
+    allocator.free(fields);
 }
 
 fn cloneMetadata(allocator: std.mem.Allocator, specs: []const MetadataEntry) ![]Metadata {
@@ -130,12 +150,17 @@ fn allocationScenario(allocator: std.mem.Allocator) !void {
     const fields = [_]FieldSpec{
         .{ .name = "id", .data_type = .int64, .nullable = false },
         .{ .name = "数据", .data_type = .utf8, .metadata = &column_metadata },
+        .{ .name = "point", .data_type = .struct_, .children = &.{
+            .{ .name = "x", .data_type = .float64 },
+            .{ .name = "label", .data_type = .utf8 },
+        } },
     };
     const metadata = [_]MetadataEntry{.{ .key = "source", .value = "native-zig" }};
     var schema = try Schema.init(allocator, &fields, &metadata);
     defer schema.deinit();
     try std.testing.expectEqual(@as(usize, 1), schema.fieldIndex("数据").?);
     try std.testing.expectEqualSlices(u8, &.{ 0, 0xff }, schema.fields[1].metadata[1].key);
+    try std.testing.expectEqualStrings("label", schema.fields[2].children[1].name);
 }
 
 test "schema deep copy, UTF-8 names, metadata and every allocation failure" {
@@ -154,6 +179,11 @@ test "schema deep copy, UTF-8 names, metadata and every allocation failure" {
     try std.testing.expectEqualStrings("k", schema.fields[0].metadata[0].key);
     try std.testing.expectEqualStrings("v", schema.fields[0].metadata[0].value);
     try std.testing.expectError(error.InvalidUtf8Name, Schema.init(std.testing.allocator, &.{.{ .name = &.{0xff}, .data_type = .binary }}, &.{}));
+    try std.testing.expectError(error.UnexpectedChildren, Schema.init(std.testing.allocator, &.{.{
+        .name = "bad",
+        .data_type = .int32,
+        .children = &.{.{ .name = "child", .data_type = .int8 }},
+    }}, &.{}));
 }
 
 test "duplicate field names preserve order and first-match lookup" {
