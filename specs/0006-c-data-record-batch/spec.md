@@ -1,6 +1,6 @@
 # Spec 0006: Native C Data record-batch export
 
-Status: Accepted for implementation; verification pending.
+Status: Implemented; published-commit CI verification pending.
 
 ## Requirements
 
@@ -30,17 +30,18 @@ Field names containing NUL are rejected because the ABI name is C-terminated.
 
 ## Tasks and acceptance gates
 
-- [ ] Preallocate all root/child array and schema state before moving the batch;
+- [x] Preallocate all root/child array and schema state before moving the batch;
       exhaustive OOM proves source preservation and leak freedom.
-- [ ] Struct root and all 13 child layouts, field names, flags and metadata encode
+- [x] Struct root and all 13 child layouts, field names, flags and metadata encode
       according to the current C Data specification.
-- [ ] Root/schema independent release, repeated cleanup helpers, base relocation,
+- [x] Root/schema independent release, repeated cleanup helpers, base relocation,
       root-driven child release and moved-child survival.
-- [ ] Test-only Zig fixture exports a mixed numeric/UTF-8/boolean record batch;
+- [x] Test-only Zig fixture exports a mixed numeric/UTF-8/boolean record batch;
       PyArrow validates values, schema/field metadata, nullability and original
       child buffer addresses without copying.
-- [ ] Empty-schema/nonzero-row batch and metadata/NUL/length overflow behavior.
+- [x] Empty-schema/nonzero-row batch and metadata/NUL/length overflow behavior.
 - [ ] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, examples, expanded interop,
-      formatting and no-shared-runtime gates locally and in CI.
+      formatting and no-shared-runtime gates locally and in CI. Local gates pass;
+      CI remains required on the published proposed commit.
 
 Mark Verified only after required CI passes on the published proposed commit.
