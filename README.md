@@ -1,2 +1,74 @@
 # ArrowZ
-The Zig SDK of Apache Arrow 
+
+A **pure Zig native implementation of Apache Arrow** with a small, idiomatic Zig
+SDK. Independent project, licensed under Apache-2.0; not an official Apache Arrow
+subproject.
+
+ArrowZ implements its own buffers, validity bitmaps, arrays, builders and slicing
+in Zig. It does not wrap or link Arrow C++, nanoarrow, Rust Arrow, or another Arrow
+runtime. An optional C Data Interface adapter, also written in Zig, enables
+zero-copy interchange with other Arrow implementations. PyArrow is used only in
+tests as an independent compatibility reference.
+
+## Current scope
+
+Experimental M0: nullable signed/unsigned 8/16/32/64-bit integers, float32/float64,
+builders, borrowed slices and ownership-transferring C Data exports. This is a
+foundation, not a complete Arrow SDK. Boolean, strings, nested arrays, record
+batches, import/stream adapters and native IPC are planned in the [roadmap](docs/ROADMAP.md).
+
+## Use
+
+Requires Zig **0.16.0**. The package exposes the `arrowz` module through `build.zig`.
+Add it as a Zig package dependency and import `dependency.module("arrowz")` into
+your application's root module.
+
+```zig
+const arrowz = @import("arrowz");
+
+var builder = arrowz.PrimitiveBuilder(i64).init(allocator);
+defer builder.deinit();
+try builder.append(42);
+try builder.append(null);
+var array = builder.finish();
+defer array.deinit();
+const value = try array.get(0); // ?i64: 42
+const view = try array.view().slice(1, 1);
+const missing = try view.get(0); // null
+```
+
+Owning arrays/builders/exports must not be copied. `finish` transfers buffers and
+leaves the builder empty and reusable. Views borrow the array and must not outlive
+it. Out-of-range access returns `error.OutOfBounds`. Allocator lifetime must exceed
+all arrays and exported buffers created with it. Internal storage fields are not
+an API for mutation; use builders and views to preserve invariants.
+
+For optional zero-copy export:
+
+```zig
+var exported = try arrowz.c_data.exportPrimitive(i64, &array);
+defer exported.deinit();
+// Pass &exported.array and &exported.schema to an Arrow C Data consumer.
+// Successful export leaves array empty; exported owns the original buffers.
+// A consuming C Data client clears the release callbacks when it moves ownership.
+```
+
+## Verify
+
+```sh
+zig build test
+zig build test -Doptimize=ReleaseSafe
+zig build example
+zig build interop
+python -m venv .venv
+.venv/bin/pip install pyarrow==23.0.1
+.venv/bin/python tests/interop.py zig-out/lib/libarrowz_fixture.so
+```
+
+The integration command above targets Linux. CI checks Linux x86_64 in Debug and
+ReleaseSafe, including 50 independent PyArrow cases, allocation failure paths and
+ABI layout/zero-copy checks. Other targets remain unverified.
+
+See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
+the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
+upstream submission requires engaged human review and maintainership.

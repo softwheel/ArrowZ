@@ -1,0 +1,58 @@
+name: Zig
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: zig-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  native:
+    name: Native Zig (${{ matrix.optimize }})
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        optimize: [Debug, ReleaseSafe]
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Install pinned Zig
+        run: python3 ci/install_zig.py "$RUNNER_TEMP/arrowz-toolchain" >> "$GITHUB_PATH"
+      - name: Install test-only reference implementation
+        run: |
+          python3 -m venv "$RUNNER_TEMP/arrowz-python"
+          "$RUNNER_TEMP/arrowz-python/bin/pip" install pyarrow==23.0.1
+      - name: Verify native implementation and interoperability
+        env:
+          OPTIMIZE: ${{ matrix.optimize }}
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          {
+            git rev-parse HEAD
+            zig version
+            zig fmt --check build.zig build.zig.zon src tests/fixture.zig examples
+            zig build test -Doptimize="$OPTIMIZE" --summary all
+            zig build example -Doptimize="$OPTIMIZE" --summary all
+            zig build interop -Doptimize="$OPTIMIZE" --summary all
+            "$RUNNER_TEMP/arrowz-python/bin/python" tests/interop.py zig-out/lib/libarrowz_fixture.so
+            readelf -d zig-out/lib/libarrowz_fixture.so > evidence/dynamic.txt
+            if grep -q '(NEEDED)' evidence/dynamic.txt; then
+              echo 'Unexpected runtime shared-library dependency'
+              exit 1
+            fi
+          } 2>&1 | tee evidence/verification.txt
+      - name: Retain verification evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: verification-${{ matrix.optimize }}
+          path: evidence/
+          if-no-files-found: warn
+          retention-days: 30

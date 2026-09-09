@@ -1,0 +1,7 @@
+.{
+    .name = .arrowz,
+    .fingerprint = 0xa36b5dea00d505ab,
+    .version = "0.1.0-dev",
+    .minimum_zig_version = "0.16.0",
+    .paths = .{ "build.zig", "build.zig.zon", "src", "tests", "examples", "LICENSE", "README.md" },
+}
