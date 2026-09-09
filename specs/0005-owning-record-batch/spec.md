@@ -1,6 +1,6 @@
 # Spec 0005: Owning heterogeneous record batches
 
-Status: Accepted for implementation; verification pending.
+Status: Verified for scoped Linux x86_64 gates; merged in PR #6.
 
 ## Requirements
 
@@ -31,15 +31,15 @@ provide batch-level PyArrow interoperability.
 
 ## Tasks and acceptance gates
 
-- [ ] Zero-copy take constructors, view/type/length access and cleanup for all
+- [x] Zero-copy take constructors, view/type/length access and cleanup for all
       thirteen types; source arrays become empty and reusable.
-- [ ] Owning batch validation and transfer with schema/columns unchanged on every
+- [x] Owning batch validation and transfer with schema/columns unchanged on every
       error or allocation failure.
-- [ ] Batch column/index/name access, zero-column nonzero-row batches, and borrowed
+- [x] Batch column/index/name access, zero-column nonzero-row batches, and borrowed
       view pointer/lifetime evidence.
-- [ ] Exhaustive allocator-failure and leak tests over schema, builders, column
+- [x] Exhaustive allocator-failure and leak tests over schema, builders, column
       container transfer and batch destruction.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe tests plus unchanged example,
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe tests plus unchanged example,
       65-case PyArrow array interop, formatting and no-shared-runtime gates.
 
 Mark Verified only after required CI passes on the published proposed commit.
