@@ -20,6 +20,9 @@ pub const Schema = schema.Schema;
 pub const record_batch = @import("record_batch.zig");
 pub const ArrayView = record_batch.ArrayView;
 pub const RecordBatch = record_batch.RecordBatch;
+pub const owned_batch = @import("owned_batch.zig");
+pub const OwnedArray = owned_batch.OwnedArray;
+pub const OwnedRecordBatch = owned_batch.OwnedRecordBatch;
 
 test {
     _ = bitmap;
@@ -29,4 +32,5 @@ test {
     _ = @import("variable_binary.zig");
     _ = schema;
     _ = record_batch;
+    _ = owned_batch;
 }
