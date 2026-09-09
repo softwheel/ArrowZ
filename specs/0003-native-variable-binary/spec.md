@@ -1,6 +1,6 @@
 # Spec 0003: Native UTF-8 and binary arrays
 
-Status: Accepted for implementation; verification pending.
+Status: Verified for scoped Linux x86_64 gates; merged in PR #4.
 
 ## Requirements
 
@@ -23,16 +23,16 @@ all three buffers and uses format `z` for binary or `u` for UTF-8.
 
 ## Tasks and acceptance gates
 
-- [ ] Native UTF-8/binary builders, arrays and nested borrowed slices.
-- [ ] Null versus empty, embedded NUL/arbitrary binary, multi-byte Unicode,
+- [x] Native UTF-8/binary builders, arrays and nested borrowed slices.
+- [x] Null versus empty, embedded NUL/arbitrary binary, multi-byte Unicode,
       offsets, nonzero slices, bounds and invalid UTF-8 tests.
-- [ ] Offset/length overflow tests and exhaustive allocation-failure injection;
+- [x] Offset/length overflow tests and exhaustive allocation-failure injection;
       append/export failures preserve logical state and leak no memory.
-- [ ] Zig-owned move-safe C Data export with independent schema lifetime and
+- [x] Zig-owned move-safe C Data export with independent schema lifetime and
       shared validity/offset/data addresses.
-- [ ] Independent PyArrow empty/all-valid/all-null/mixed/nonzero-offset tests for
+- [x] Independent PyArrow empty/all-valid/all-null/mixed/nonzero-offset tests for
       both types, full validation, retaining all prior 55 cases.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe tests, example, interoperability,
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe tests, example, interoperability,
       formatting and no-shared-runtime gates locally and in CI.
 
 Mark Verified only after required CI passes on the published proposed commit.

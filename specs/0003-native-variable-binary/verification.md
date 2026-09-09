@@ -1,6 +1,6 @@
 # Native UTF-8/binary verification and handoff
 
-Date: 2026-09-09. Status: local gates passed; required CI pending.
+Date: 2026-09-09. Status: Verified for scoped Linux x86_64 gates; merged.
 Base main: `436b87a482d83325ab5e54de6ec2f5fcdcac18e7`.
 Requirements committed before implementation: `cb39c2b` (local identity).
 Implementation commit: `ce02eaf96772e2237f5d4ae19d3d4527454982a8`.
@@ -40,10 +40,12 @@ while retaining all 55 earlier cases. PyArrow is not linked into the SDK/fixture
 
 ## Remaining gate and next slice
 
-Publish a focused PR preserving the spec-before-code history. Confirm published
-source/test trees equal the identities above. Record the actual CI head/run and
-both job results; mark Verified and merge only when required reviews and repository
-protections are satisfied. Do not claim unrecorded human review.
+CI [run 34390666241](https://github.com/softwheel/ArrowZ/actions/runs/34390666241)
+completed successfully on published head
+`0b78673bd0ef47b39592abc65c76ed840977d823`; both Native Zig jobs passed every
+step. The published full/source/test trees matched the locally tested identities.
+PR #4 was mergeable with no requested or required review recorded and was
+squash-merged as `7eee632ae308e9ba462b6a50529a81e01c6a8e85`.
 
 Next specify native schema/field metadata and record batches with equal-length
 column validation and ownership/lifetime tests. Nested arrays follow. C Data import,
