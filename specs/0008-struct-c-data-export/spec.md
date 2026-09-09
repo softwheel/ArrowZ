@@ -1,6 +1,6 @@
 # Spec 0008: Recursive struct C Data export
 
-Status: Implemented; published-commit CI verification pending.
+Status: Verified for the scoped Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -40,8 +40,7 @@ therefore consuming or moving either ABI half cannot invalidate the other.
       cleanup and moved nested descendant survival.
 - [x] Test-only Zig fixture exports nested nullable structs; PyArrow validates the
       recursive schema, values, metadata, parent nulls and original buffer addresses.
-- [ ] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, example, formatting, expanded
-      interoperability and no-shared-runtime gates locally and in CI. Local gates
-      pass; CI remains required on the published proposed commit.
+- [x] Pinned Zig 0.16.0 Debug/ReleaseSafe tests, example, formatting, expanded
+      interoperability and no-shared-runtime gates locally and in CI.
 
 Mark Verified only after required CI passes on the published proposed commit.

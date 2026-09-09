@@ -29,8 +29,15 @@ for both parent validity buffers plus numeric values and UTF-8 offsets/data.
 
 ## Published-commit gate
 
-Not yet satisfied. Record the PR, proposed head, both CI jobs and merge SHA only
-after remote checks complete. Spec 0008 is not Verified until then.
+PR #9 proposed commit `bc194d696d1d06dd1f7b2c4f746ddbc32fd131c5`.
+GitHub Actions run `34418596144` completed successfully for both matrix jobs:
+Debug job `102688872279` and ReleaseSafe job `102688872388`. Each ran the same
+33 native tests, example, 67-case PyArrow oracle, formatting and no-runtime gates.
+There were no review submissions or unresolved review threads, and GitHub reported
+the PR mergeable.
+
+This evidence-only follow-up commit must pass CI as the final proposed head; its
+run and merge SHA remain in the PR/merge history.
 
 ## Next handoff
 
