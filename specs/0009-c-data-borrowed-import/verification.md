@@ -30,9 +30,15 @@ not consume either producer-owned base structure.
 
 ## Published-commit gate
 
-Pending PR CI on the exact proposed commit. Do not mark this spec Verified until
-both Debug and ReleaseSafe jobs pass and required review/protection gates permit
-merge.
+PR #10 proposed commit `f0da514ac581abbddb63a64fa11f383bfffb1ed5`.
+GitHub Actions run `34422631386` completed successfully for both matrix jobs:
+Debug job `102701156697` and ReleaseSafe job `102701156896`. Each ran the same
+36 native tests, example, 132-case bidirectional PyArrow oracle, formatting and
+no-runtime-dependency gates.
+
+This evidence-only follow-up commit must pass CI as the final proposed head. Its
+run and merge SHA remain in the PR/merge history. Required review and repository
+protection state must also be checked again before merge.
 
 ## Next handoff
 
