@@ -19,7 +19,7 @@ pub const VariableBinaryView = struct {
     pub fn get(self: VariableBinaryView, index: usize) error{OutOfBounds}!?[]const u8 {
         if (index >= self.len) return error.OutOfBounds;
         const physical = self.offset + index;
-        if (!bitmap.isSet(self.validity, physical)) return null;
+        if (self.validity.len != 0 and !bitmap.isSet(self.validity, physical)) return null;
         const start: usize = @intCast(self.offsets[physical]);
         const end: usize = @intCast(self.offsets[physical + 1]);
         return self.data[start..end];
