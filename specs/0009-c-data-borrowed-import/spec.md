@@ -1,6 +1,6 @@
 # Spec 0009: Borrowed C Data leaf-array import
 
-Status: Implementing.
+Status: Awaiting published-commit CI (local gates passed; see verification.md).
 
 ## M1 reconciliation
 
@@ -51,14 +51,13 @@ by the existing checked native views.
 
 ## Tasks and acceptance gates
 
-- [ ] Implement zero-allocation borrowed imports for all 13 M1 leaf types.
-- [ ] Cover omitted validity, unknown null count, non-zero/non-byte-aligned
+- [x] Implement zero-allocation borrowed imports for all 13 M1 leaf types.
+- [x] Cover omitted validity, unknown null count, non-zero/non-byte-aligned
       offsets, empty arrays, nulls, binary bytes, Unicode and zero-copy addresses.
-- [ ] Reject malformed scalar metadata, layouts, pointers, alignment, offsets and
+- [x] Reject malformed scalar metadata, layouts, pointers, alignment, offsets and
       UTF-8 without calling producer release callbacks.
-- [ ] Add PyArrow-to-Zig interoperability cases; PyArrow remains test-only.
+- [x] Add PyArrow-to-Zig interoperability cases; PyArrow remains test-only.
 - [ ] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
       formatting, bidirectional interoperability and no-runtime-dependency gates.
 
 Mark Verified only after the exact final proposed commit passes required CI.
-
