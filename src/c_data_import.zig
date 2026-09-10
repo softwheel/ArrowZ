@@ -30,6 +30,39 @@ pub const ImportError = error{
     InvalidUtf8,
 };
 
+/// Singular owner of producer-created C Data base structures. Do not copy.
+/// Use `move` for explicit relocation and `deinit` exactly once per live owner.
+pub const ImportedArray = struct {
+    array: c.ArrowArray = .{},
+    schema: c.ArrowSchema = .{},
+
+    /// Validates before moving. Failure leaves both caller structures untouched.
+    pub fn take(array: *c.ArrowArray, schema: *c.ArrowSchema) ImportError!ImportedArray {
+        _ = try borrowArray(array, schema);
+        const result: ImportedArray = .{ .array = array.*, .schema = schema.* };
+        array.* = .{};
+        schema.* = .{};
+        return result;
+    }
+
+    pub fn borrow(self: *const ImportedArray) ImportError!record_batch.ArrayView {
+        return borrowArray(&self.array, &self.schema);
+    }
+
+    /// Relocates ownership and invalidates the source owner without releasing.
+    pub fn move(self: *ImportedArray) ImportedArray {
+        const result = self.*;
+        self.* = .{};
+        return result;
+    }
+
+    pub fn deinit(self: *ImportedArray) void {
+        c.releaseArray(&self.array);
+        c.releaseSchema(&self.schema);
+        self.* = .{};
+    }
+};
+
 const Common = struct {
     buffers: [*]const ?*const anyopaque,
     validity: []const u8,
@@ -166,6 +199,82 @@ fn noOpArrayRelease(array: *c.ArrowArray) callconv(.c) void {
 
 fn noOpSchemaRelease(schema: *c.ArrowSchema) callconv(.c) void {
     schema.release = null;
+}
+
+const ReleaseCounts = struct {
+    arrays: usize = 0,
+    schemas: usize = 0,
+};
+
+fn countArrayRelease(array: *c.ArrowArray) callconv(.c) void {
+    const counts: *ReleaseCounts = @ptrCast(@alignCast(array.private_data.?));
+    counts.arrays += 1;
+    array.* = .{};
+}
+
+fn countSchemaRelease(schema: *c.ArrowSchema) callconv(.c) void {
+    const counts: *ReleaseCounts = @ptrCast(@alignCast(schema.private_data.?));
+    counts.schemas += 1;
+    schema.* = .{};
+}
+
+test "take validates before move, relocates explicitly and releases exactly once" {
+    const values = [_]i32{ 20, 21 };
+    var buffers = [_]?*const anyopaque{ null, @ptrCast(&values) };
+    var counts: ReleaseCounts = .{};
+    var array: c.ArrowArray = .{
+        .length = 2,
+        .n_buffers = 2,
+        .buffers = &buffers,
+        .release = countArrayRelease,
+        .private_data = &counts,
+    };
+    var schema: c.ArrowSchema = .{
+        .format = "i",
+        .release = countSchemaRelease,
+        .private_data = &counts,
+    };
+    var imported = try ImportedArray.take(&array, &schema);
+    try std.testing.expect(array.release == null and schema.release == null);
+    try std.testing.expectEqual(@as(?i32, 21), try (try imported.borrow()).int32.get(1));
+    try std.testing.expectEqual(@intFromPtr(&values), @intFromPtr((try imported.borrow()).int32.values.ptr));
+
+    var moved = imported.move();
+    try std.testing.expectError(error.Released, imported.borrow());
+    imported.deinit();
+    try std.testing.expectEqual(@as(usize, 0), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 0), counts.schemas);
+    moved.deinit();
+    try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 1), counts.schemas);
+    moved.deinit();
+    try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 1), counts.schemas);
+    try std.testing.expectError(error.Released, moved.borrow());
+}
+
+test "take failure preserves both producer owners" {
+    const values = [_]i32{1};
+    var buffers = [_]?*const anyopaque{ null, @ptrCast(&values) };
+    var counts: ReleaseCounts = .{};
+    var array: c.ArrowArray = .{
+        .length = 1,
+        .n_buffers = 1,
+        .buffers = &buffers,
+        .release = countArrayRelease,
+        .private_data = &counts,
+    };
+    var schema: c.ArrowSchema = .{
+        .format = "i",
+        .release = countSchemaRelease,
+        .private_data = &counts,
+    };
+    try std.testing.expectError(error.InvalidBufferCount, ImportedArray.take(&array, &schema));
+    try std.testing.expect(array.release != null and schema.release != null);
+    c.releaseArray(&array);
+    c.releaseSchema(&schema);
+    try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 1), counts.schemas);
 }
 
 test "borrow all leaf layouts, omitted validity, offsets and zero-copy addresses" {

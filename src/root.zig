@@ -5,6 +5,7 @@ pub const PrimitiveBuilder = @import("primitive.zig").PrimitiveBuilder;
 pub const PrimitiveView = @import("primitive.zig").PrimitiveView;
 pub const c_data = @import("c_data.zig");
 pub const c_data_import = @import("c_data_import.zig");
+pub const ImportedArray = c_data_import.ImportedArray;
 pub const c_data_batch = @import("c_data_batch.zig");
 pub const BooleanArray = @import("boolean.zig").BooleanArray;
 pub const BooleanBuilder = @import("boolean.zig").BooleanBuilder;
