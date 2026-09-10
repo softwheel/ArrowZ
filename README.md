@@ -16,9 +16,9 @@ Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
 float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
 metadata, recursively owned native struct arrays, borrowed and owning heterogeneous record batches, builders, slices and
 ownership-transferring C Data array and record-batch exports, plus borrowed C Data
-import for all implemented leaf types. This is a foundation, not a complete Arrow
-SDK. Ownership-taking import, stream adapters and native IPC are planned in the
-[roadmap](docs/ROADMAP.md).
+import and ownership-taking import for all implemented leaf types. This is a
+foundation, not a complete Arrow SDK. Stream adapters and native IPC are planned
+in the [roadmap](docs/ROADMAP.md).
 
 ## Use
 
@@ -96,6 +96,12 @@ and their producer-owned buffers must remain live and immutable while the view i
 used. The C Data ABI does not report buffer byte lengths, so callers must uphold
 the interface rule that buffers cover the declared offset and length.
 
+`arrowz.ImportedArray.take(&c_array, &c_schema)` validates before moving both C
+base structures into a singular Zig owner. Failure preserves caller ownership;
+success clears both sources. Use `borrow` for a native view, `move` for explicit
+relocation, and `deinit` to invoke both producer callbacks exactly once. Do not
+copy the owner.
+
 ## Verify
 
 ```sh
@@ -109,7 +115,7 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 132 independent bidirectional PyArrow cases, allocation
+ReleaseSafe, including 197 independent C Data/PyArrow cases, allocation
 failure paths and ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
@@ -121,5 +127,6 @@ the [record-batch export spec](specs/0006-c-data-record-batch/spec.md), and
 the [native struct-array spec](specs/0007-native-struct-array/spec.md), and
 the [recursive struct-export spec](specs/0008-struct-c-data-export/spec.md),
 the [borrowed C Data import spec](specs/0009-c-data-borrowed-import/spec.md), alongside
+the [ownership-taking C Data import spec](specs/0010-c-data-owned-import/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.

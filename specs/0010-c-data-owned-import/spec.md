@@ -1,6 +1,6 @@
 # Spec 0010: Ownership-taking C Data leaf import
 
-Status: Implementing.
+Status: Awaiting published-commit CI (local gates passed; see verification.md).
 
 ## Requirements
 
@@ -32,14 +32,13 @@ are relocatable.
 
 ## Tasks and acceptance gates
 
-- [ ] Take every supported leaf type without copying its buffers.
-- [ ] Prove validation failure preserves both caller-owned structures.
-- [ ] Prove source invalidation, explicit relocation, independent callback counts,
+- [x] Take every supported leaf type without copying its buffers.
+- [x] Prove validation failure preserves both caller-owned structures.
+- [x] Prove source invalidation, explicit relocation, independent callback counts,
       release-exactly-once, repeated cleanup and borrow-after-release behavior.
-- [ ] Add PyArrow-produced ownership-transfer cases for every type, including
+- [x] Add PyArrow-produced ownership-transfer cases for every type, including
       empty, all-valid, all-null, mixed-null and non-zero-offset arrays.
 - [ ] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
       formatting, expanded interoperability and no-runtime-dependency gates.
 
 Mark Verified only after the exact final proposed commit passes required CI.
-
