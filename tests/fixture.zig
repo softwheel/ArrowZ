@@ -8,9 +8,23 @@ export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowA
     return 0;
 }
 
+export fn arrowz_take_fixture(kind: u32, scenario: u32, array: *c.ArrowArray, schema: *c.ArrowSchema) c_int {
+    var imported = z.ImportedArray.take(array, schema) catch return 1;
+    defer imported.deinit();
+    if (array.release != null or schema.release != null) return 2;
+    const view = imported.borrow() catch return 3;
+    consumeView(kind, scenario, view) catch return 4;
+    return 0;
+}
+
 fn consume(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) !void {
     if (kind >= 13 or scenario > 4) return error.BadCase;
     const view = try z.c_data_import.borrowArray(array, schema);
+    try consumeView(kind, scenario, view);
+}
+
+fn consumeView(kind: u32, scenario: u32, view: z.ArrayView) !void {
+    if (kind >= 13 or scenario > 4) return error.BadCase;
     switch (view) {
         .int8 => |typed| try checkPrimitive(i8, typed, scenario),
         .uint8 => |typed| try checkPrimitive(u8, typed, scenario),
