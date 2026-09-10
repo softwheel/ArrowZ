@@ -1,6 +1,6 @@
 # Spec 0010: Ownership-taking C Data leaf import
 
-Status: Awaiting published-commit CI (local gates passed; see verification.md).
+Status: Verified for the scoped Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -38,7 +38,7 @@ are relocatable.
       release-exactly-once, repeated cleanup and borrow-after-release behavior.
 - [x] Add PyArrow-produced ownership-transfer cases for every type, including
       empty, all-valid, all-null, mixed-null and non-zero-offset arrays.
-- [ ] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
+- [x] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
       formatting, expanded interoperability and no-runtime-dependency gates.
 
 Mark Verified only after the exact final proposed commit passes required CI.

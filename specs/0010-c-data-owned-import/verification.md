@@ -31,9 +31,15 @@ native callback counters provide the release-exactly-once evidence.
 
 ## Published-commit gate
 
-Pending PR CI on the exact proposed commit. Do not mark this spec Verified until
-both Debug and ReleaseSafe jobs pass and required review/protection gates permit
-merge.
+PR #11 proposed commit `c6bd4a19c0e4d02731b0eb52b763b0756d291c5d`.
+GitHub Actions run `34426342850` completed successfully for both matrix jobs:
+Debug job `102712283950` and ReleaseSafe job `102712284328`. Each ran the same
+38 native tests, example, 197-case PyArrow oracle, formatting and
+no-runtime-dependency gates.
+
+This evidence-only follow-up commit must pass CI as the final proposed head. Its
+run and merge SHA remain in the PR/merge history. Required review and repository
+protection state must also be checked again before merge.
 
 ## Next handoff
 
