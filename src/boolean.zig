@@ -11,7 +11,7 @@ pub const BooleanView = struct {
     pub fn get(self: BooleanView, index: usize) error{OutOfBounds}!?bool {
         if (index >= self.len) return error.OutOfBounds;
         const physical = self.offset + index;
-        return if (bitmap.isSet(self.validity, physical)) bitmap.isSet(self.values, physical) else null;
+        return if (self.validity.len == 0 or bitmap.isSet(self.validity, physical)) bitmap.isSet(self.values, physical) else null;
     }
 
     pub fn slice(self: BooleanView, offset: usize, len: usize) error{OutOfBounds}!BooleanView {

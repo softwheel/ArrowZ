@@ -21,7 +21,7 @@ pub fn PrimitiveView(comptime T: type) type {
         pub fn get(self: Self, index: usize) error{OutOfBounds}!?T {
             if (index >= self.len) return error.OutOfBounds;
             const physical = self.offset + index;
-            return if (bitmap.isSet(self.validity, physical)) self.values[physical] else null;
+            return if (self.validity.len == 0 or bitmap.isSet(self.validity, physical)) self.values[physical] else null;
         }
 
         pub fn slice(self: Self, offset: usize, len: usize) error{OutOfBounds}!Self {

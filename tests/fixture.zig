@@ -3,6 +3,73 @@ const std = @import("std");
 const z = @import("arrowz");
 const c = z.c_data;
 
+export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) c_int {
+    consume(kind, scenario, array, schema) catch return 1;
+    return 0;
+}
+
+fn consume(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) !void {
+    if (kind >= 13 or scenario > 4) return error.BadCase;
+    const view = try z.c_data_import.borrowArray(array, schema);
+    switch (view) {
+        .int8 => |typed| try checkPrimitive(i8, typed, scenario),
+        .uint8 => |typed| try checkPrimitive(u8, typed, scenario),
+        .int16 => |typed| try checkPrimitive(i16, typed, scenario),
+        .uint16 => |typed| try checkPrimitive(u16, typed, scenario),
+        .int32 => |typed| try checkPrimitive(i32, typed, scenario),
+        .uint32 => |typed| try checkPrimitive(u32, typed, scenario),
+        .int64 => |typed| try checkPrimitive(i64, typed, scenario),
+        .uint64 => |typed| try checkPrimitive(u64, typed, scenario),
+        .float32 => |typed| try checkPrimitive(f32, typed, scenario),
+        .float64 => |typed| try checkPrimitive(f64, typed, scenario),
+        .boolean => |typed| {
+            try checkLength(typed.len, scenario);
+            for (0..typed.len) |i| {
+                const physical = i + if (scenario == 4) @as(usize, 7) else 0;
+                const expected: ?bool = if (isNull(scenario, physical)) null else physical % 2 == 0;
+                if ((try typed.get(i)) != expected) return error.ValueMismatch;
+            }
+        },
+        .binary, .utf8 => |typed| {
+            try checkLength(typed.len, scenario);
+            const binary = [_][]const u8{ "", &.{ 0, 0xff }, "abc" };
+            const utf8 = [_][]const u8{ "", "数据", "🏹" };
+            for (0..typed.len) |i| {
+                const physical = i + if (scenario == 4) @as(usize, 7) else 0;
+                const actual = try typed.get(i);
+                if (isNull(scenario, physical)) {
+                    if (actual != null) return error.ValueMismatch;
+                } else {
+                    const expected = if (typed.kind == .binary) binary[physical % 3] else utf8[physical % 3];
+                    if (actual == null or !std.mem.eql(u8, actual.?, expected)) return error.ValueMismatch;
+                }
+            }
+        },
+        .struct_ => return error.BadType,
+    }
+}
+
+fn checkPrimitive(comptime T: type, view: z.PrimitiveView(T), scenario: u32) !void {
+    try checkLength(view.len, scenario);
+    for (0..view.len) |i| {
+        const physical = i + if (scenario == 4) @as(usize, 7) else 0;
+        const expected: ?T = if (isNull(scenario, physical)) null else switch (@typeInfo(T)) {
+            .float => @floatFromInt(physical),
+            else => @intCast(physical),
+        };
+        if ((try view.get(i)) != expected) return error.ValueMismatch;
+    }
+}
+
+fn checkLength(actual: usize, scenario: u32) !void {
+    const expected: usize = if (scenario == 0) 0 else if (scenario == 4) 9 else 20;
+    if (actual != expected) return error.LengthMismatch;
+}
+
+fn isNull(scenario: u32, physical: usize) bool {
+    return scenario == 2 or (scenario >= 3 and physical % 3 == 0);
+}
+
 export fn arrowz_batch_fixture(out: *c.ArrowArray, out_schema: *c.ArrowSchema) c_int {
     if (out.release != null or out_schema.release != null) return 1;
     produceBatch(out, out_schema) catch return 3;

@@ -32,6 +32,8 @@ def release(value):
 lib = ct.CDLL(str(pathlib.Path(sys.argv[1]).resolve()))
 lib.arrowz_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_fixture.restype = ct.c_int
+lib.arrowz_import_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
+lib.arrowz_import_fixture.restype = ct.c_int
 lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_batch_fixture.restype = ct.c_int
 lib.arrowz_nested_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
@@ -87,6 +89,34 @@ for kind, dtype in enumerate(types):
             assert arr.offset == (7 if scenario == 4 else 0)
             del arr
             gc.collect()
+        finally:
+            release(raw)
+            release(schema)
+        cases += 1
+
+# Inverse direction: PyArrow is the independent producer and Zig borrows every
+# supported leaf layout without consuming either producer-owned base structure.
+for kind, dtype in enumerate(types):
+    for scenario in range(5):
+        if kind == 11:
+            values = [b"", b"\x00\xff", b"abc"]
+        elif kind == 12:
+            values = ["", "数据", "🏹"]
+        else:
+            values = None
+        source_values = [] if scenario == 0 else [
+            None if scenario == 2 or (scenario >= 3 and i % 3 == 0)
+            else (values[i % 3] if values is not None else (i % 2 == 0 if kind == 10 else i))
+            for i in range(20)
+        ]
+        source = pa.array(source_values, type=dtype)
+        if scenario == 4:
+            source = source.slice(7, 9)
+        raw, schema = ArrowArray(), ArrowSchema()
+        source._export_to_c(ct.addressof(raw), ct.addressof(schema))
+        try:
+            assert lib.arrowz_import_fixture(kind, scenario, ct.byref(raw), ct.byref(schema)) == 0, (dtype, scenario)
+            assert raw.release and schema.release, "borrowed Zig import consumed producer ownership"
         finally:
             release(raw)
             release(schema)
@@ -169,4 +199,4 @@ finally:
     release(raw)
     release(schema)
 cases += 1
-print(f"PASS: {cases} native Zig -> PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
+print(f"PASS: {cases} bidirectional native Zig/PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
