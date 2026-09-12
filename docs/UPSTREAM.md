@@ -21,6 +21,9 @@ References checked 2026-09-09:
 - https://arrow.apache.org/docs/format/CDataInterface.html
 - https://arrow.apache.org/docs/format/CStreamInterface.html
 
+The C Stream reference was rechecked on 2026-09-12 against the published Arrow
+25.0.1 documentation before implementing the native consumer.
+
 Before upstream submission, the owner should review and understand the generated
 changes and be prepared to debug and maintain them, as Arrow's contribution guide
 requests. Autopilot can develop and prepare concrete upstream patches and proposal

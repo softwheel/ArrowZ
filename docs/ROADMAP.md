@@ -31,5 +31,7 @@ specs/0009-c-data-borrowed-import/spec.md. M2 starts with borrowed leaf-array
 C Data import before ownership-taking import and C Stream work.
 Ownership-taking leaf import is governed by
 specs/0010-c-data-owned-import/spec.md.
+The first C Stream consumer slice is governed by
+specs/0011-c-stream-leaf-consumer/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
