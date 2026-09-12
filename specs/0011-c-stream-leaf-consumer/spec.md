@@ -1,6 +1,6 @@
 # Spec 0011: C Stream leaf-array consumer
 
-Status: Implementing.
+Status: Awaiting published-commit CI (local gates passed; see verification.md).
 
 ## Requirements
 
@@ -38,15 +38,14 @@ errors do not authorize `get_last_error`.
 
 ## Tasks and acceptance gates
 
-- [ ] Match the canonical five-field C ABI layout and callback signatures.
-- [ ] Cover schema-once, live chunks, independent lifetimes, EOS caching, explicit
+- [x] Match the canonical five-field C ABI layout and callback signatures.
+- [x] Cover schema-once, live chunks, independent lifetimes, EOS caching, explicit
       relocation, missing callbacks, released state and idempotent cleanup.
-- [ ] Cover schema/next producer errors, errno retention, transient error text and
+- [x] Cover schema/next producer errors, errno retention, transient error text and
       cleanup of live partial outputs.
-- [ ] Consume PyArrow-produced leaf chunks through independent Python C callbacks
+- [x] Consume PyArrow-produced leaf chunks through independent Python C callbacks
       for every supported type without transferring any foreign runtime into SDK.
 - [ ] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
       formatting, expanded interoperability and no-runtime-dependency gates.
 
 Mark Verified only after the exact final proposed commit passes required CI.
-

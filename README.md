@@ -17,8 +17,9 @@ float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas an
 metadata, recursively owned native struct arrays, borrowed and owning heterogeneous record batches, builders, slices and
 ownership-transferring C Data array and record-batch exports, plus borrowed C Data
 import and ownership-taking import for all implemented leaf types. This is a
-foundation, not a complete Arrow SDK. Stream adapters and native IPC are planned
-in the [roadmap](docs/ROADMAP.md).
+foundation, not a complete Arrow SDK. A synchronous ownership-taking C Stream
+consumer supports leaf-array streams; recursive stream batches, stream production
+and native IPC are planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
 
@@ -102,6 +103,13 @@ success clears both sources. Use `borrow` for a native view, `move` for explicit
 relocation, and `deinit` to invoke both producer callbacks exactly once. Do not
 copy the owner.
 
+`arrowz.ImportedStream.take(&c_stream)` moves a validated C Stream callback table.
+Call `readSchema` once, then `next` until it returns `null`. Each live result is an
+independently owned `StreamChunk`; its native view remains valid if the stream is
+released first. Producer failures preserve the errno-style code and permit one
+immediate borrowed `lastError` lookup. The consumer is synchronous and must not be
+used concurrently.
+
 ## Verify
 
 ```sh
@@ -115,7 +123,7 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 197 independent C Data/PyArrow cases, allocation
+ReleaseSafe, including 210 independent C Data/Stream/PyArrow cases, allocation
 failure paths and ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
@@ -127,6 +135,7 @@ the [record-batch export spec](specs/0006-c-data-record-batch/spec.md), and
 the [native struct-array spec](specs/0007-native-struct-array/spec.md), and
 the [recursive struct-export spec](specs/0008-struct-c-data-export/spec.md),
 the [borrowed C Data import spec](specs/0009-c-data-borrowed-import/spec.md), alongside
-the [ownership-taking C Data import spec](specs/0010-c-data-owned-import/spec.md), alongside
+the [ownership-taking C Data import spec](specs/0010-c-data-owned-import/spec.md),
+the [C Stream leaf consumer spec](specs/0011-c-stream-leaf-consumer/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
