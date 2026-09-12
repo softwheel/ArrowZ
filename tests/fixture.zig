@@ -2,6 +2,21 @@
 const std = @import("std");
 const z = @import("arrowz");
 const c = z.c_data;
+const cs = z.c_stream;
+
+export fn arrowz_stream_fixture(kind: u32, stream: *cs.ArrowArrayStream) c_int {
+    var consumer = z.ImportedStream.take(stream) catch return 1;
+    defer consumer.deinit();
+    consumer.readSchema() catch return 2;
+    var chunk = (consumer.next() catch return 3) orelse return 4;
+    defer chunk.deinit();
+    if ((consumer.next() catch return 5) != null) return 6;
+    if ((consumer.next() catch return 7) != null) return 8;
+    consumer.deinit();
+    if (stream.release != null) return 9;
+    consumeView(kind, 3, chunk.borrow() catch return 10) catch return 11;
+    return 0;
+}
 
 export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) c_int {
     consume(kind, scenario, array, schema) catch return 1;
@@ -276,6 +291,7 @@ export fn arrowz_abi_size(which: u32) usize {
     return switch (which) {
         0 => @sizeOf(c.ArrowArray),
         1 => @sizeOf(c.ArrowSchema),
+        2 => @sizeOf(cs.ArrowArrayStream),
         else => 0,
     };
 }
@@ -288,6 +304,10 @@ export fn arrowz_abi_offset(which: u32, field: u32) usize {
     } else if (which == 1) {
         inline for (std.meta.fields(c.ArrowSchema), 0..) |f, i| {
             if (field == i) return @offsetOf(c.ArrowSchema, f.name);
+        }
+    } else if (which == 2) {
+        inline for (std.meta.fields(cs.ArrowArrayStream), 0..) |f, i| {
+            if (field == i) return @offsetOf(cs.ArrowArrayStream, f.name);
         }
     }
     return std.math.maxInt(usize);

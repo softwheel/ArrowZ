@@ -23,6 +23,14 @@ class ArrowSchema(ct.Structure):
     ]
 
 
+class ArrowArrayStream(ct.Structure):
+    _fields_ = [
+        ("get_schema", ct.c_void_p), ("get_next", ct.c_void_p),
+        ("get_last_error", ct.c_void_p), ("release", ct.c_void_p),
+        ("private_data", ct.c_void_p),
+    ]
+
+
 def release(value):
     if value.release:
         ct.CFUNCTYPE(None, ct.c_void_p)(value.release)(ct.addressof(value))
@@ -36,6 +44,8 @@ lib.arrowz_import_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(Arrow
 lib.arrowz_import_fixture.restype = ct.c_int
 lib.arrowz_take_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_take_fixture.restype = ct.c_int
+lib.arrowz_stream_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArrayStream)]
+lib.arrowz_stream_fixture.restype = ct.c_int
 lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_batch_fixture.restype = ct.c_int
 lib.arrowz_nested_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
@@ -44,7 +54,7 @@ lib.arrowz_abi_size.argtypes = [ct.c_uint32]
 lib.arrowz_abi_size.restype = ct.c_size_t
 lib.arrowz_abi_offset.argtypes = [ct.c_uint32, ct.c_uint32]
 lib.arrowz_abi_offset.restype = ct.c_size_t
-for kind, cls in enumerate((ArrowArray, ArrowSchema)):
+for kind, cls in enumerate((ArrowArray, ArrowSchema, ArrowArrayStream)):
     assert lib.arrowz_abi_size(kind) == ct.sizeof(cls)
     for i, (name, _) in enumerate(cls._fields_):
         assert lib.arrowz_abi_offset(kind, i) == getattr(cls, name).offset
@@ -95,6 +105,59 @@ for kind, dtype in enumerate(types):
             release(raw)
             release(schema)
         cases += 1
+
+# PyArrow supplies each leaf schema and chunk through independent Python C Stream
+# callbacks. Zig owns/releases schema, chunk, and stream on separate timelines.
+GET_SCHEMA = ct.CFUNCTYPE(ct.c_int, ct.c_void_p, ct.c_void_p)
+GET_NEXT = ct.CFUNCTYPE(ct.c_int, ct.c_void_p, ct.c_void_p)
+GET_LAST_ERROR = ct.CFUNCTYPE(ct.c_char_p, ct.c_void_p)
+RELEASE_STREAM = ct.CFUNCTYPE(None, ct.c_void_p)
+for kind, dtype in enumerate(types):
+    if kind == 11:
+        values = [b"", b"\x00\xff", b"abc"]
+    elif kind == 12:
+        values = ["", "数据", "🏹"]
+    else:
+        values = None
+    source_values = [
+        None if i % 3 == 0
+        else (values[i % 3] if values is not None else (i % 2 == 0 if kind == 10 else i))
+        for i in range(20)
+    ]
+    chunk = pa.array(source_values, type=dtype)
+    counts = {"schema": 0, "next": 0, "error": 0, "release": 0}
+
+    @GET_SCHEMA
+    def get_schema(_stream, out):
+        counts["schema"] += 1
+        dtype._export_to_c(out)
+        return 0
+
+    @GET_NEXT
+    def get_next(_stream, out):
+        counts["next"] += 1
+        if counts["next"] == 1:
+            chunk._export_to_c(out)
+        return 0
+
+    @GET_LAST_ERROR
+    def get_last_error(_stream):
+        counts["error"] += 1
+        return None
+
+    @RELEASE_STREAM
+    def release_stream(stream_pointer):
+        counts["release"] += 1
+        ct.cast(stream_pointer, ct.POINTER(ArrowArrayStream)).contents.release = None
+
+    stream = ArrowArrayStream(
+        ct.cast(get_schema, ct.c_void_p), ct.cast(get_next, ct.c_void_p),
+        ct.cast(get_last_error, ct.c_void_p), ct.cast(release_stream, ct.c_void_p), None,
+    )
+    assert lib.arrowz_stream_fixture(kind, ct.byref(stream)) == 0, dtype
+    assert not stream.release
+    assert counts == {"schema": 1, "next": 2, "error": 0, "release": 1}, (dtype, counts)
+    cases += 1
 
 # Ownership direction: PyArrow produces both base structures, Zig moves them,
 # validates through its native view, and invokes each producer callback on exit.
@@ -225,4 +288,4 @@ finally:
     release(raw)
     release(schema)
 cases += 1
-print(f"PASS: {cases} bidirectional native Zig/PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
+print(f"PASS: {cases} native Zig C Data/Stream and PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
