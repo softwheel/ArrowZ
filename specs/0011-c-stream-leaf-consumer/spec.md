@@ -1,6 +1,6 @@
 # Spec 0011: C Stream leaf-array consumer
 
-Status: Awaiting published-commit CI (local gates passed; see verification.md).
+Status: Verified for the scoped Linux x86_64 gates (see verification.md).
 
 ## Requirements
 
@@ -45,7 +45,7 @@ errors do not authorize `get_last_error`.
       cleanup of live partial outputs.
 - [x] Consume PyArrow-produced leaf chunks through independent Python C callbacks
       for every supported type without transferring any foreign runtime into SDK.
-- [ ] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
+- [x] Pass pinned Zig 0.16.0 Debug and ReleaseSafe native tests, examples,
       formatting, expanded interoperability and no-runtime-dependency gates.
 
 Mark Verified only after the exact final proposed commit passes required CI.

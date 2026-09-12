@@ -34,9 +34,15 @@ the stream before reading the still-live chunk, and owns every result callback.
 
 ## Published-commit gate
 
-Pending PR CI on the exact proposed commit. Do not mark this spec Verified until
-both Debug and ReleaseSafe jobs pass and required review/protection gates permit
-merge.
+PR #12 proposed commit `623e62dfaaa166c22250da7bba2ac599747bd3c8`.
+GitHub Actions run `34705941088` completed successfully for both matrix jobs:
+Debug job `103585878520` and ReleaseSafe job `103585878661`. Each ran the same
+42 native tests, example, 210-case PyArrow oracle, formatting and
+no-runtime-dependency gates.
+
+This evidence-only follow-up commit must pass CI as the final proposed head. Its
+run and merge SHA remain in the PR/merge history. Required review and repository
+protection state must also be checked again before merge.
 
 ## Next handoff
 
