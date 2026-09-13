@@ -4,6 +4,33 @@ const z = @import("arrowz");
 const c = z.c_data;
 const cs = z.c_stream;
 
+export fn arrowz_recursive_import_fixture(scenario: u32, array: *c.ArrowArray, schema: *c.ArrowSchema) c_int {
+    var owner = z.ImportedStruct.take(std.heap.page_allocator, array, schema) catch return 1;
+    defer owner.deinit();
+    if (array.release != null or schema.release != null) return 2;
+    const root = (owner.borrow() catch return 3).struct_;
+    if (scenario == 0) {
+        if (root.len != 2 or root.children.len != 2 or root.null_count != 1) return 4;
+        if ((root.isValid(0) catch return 5) or !(root.isValid(1) catch return 6)) return 7;
+        const inner = (root.child(0) catch return 8).struct_;
+        if (inner.null_count != 1 or inner.children.len != 1) return 9;
+        const ids = (inner.child(0) catch return 10).int32;
+        if ((ids.get(0) catch return 11) != 41 or (ids.get(1) catch return 12) != 42) return 13;
+        if (@intFromPtr(ids.values.ptr) != @intFromPtr(inner.children[0].int32.values.ptr)) return 14;
+        const labels = (root.child(1) catch return 15).utf8;
+        if (!std.mem.eql(u8, (labels.get(1) catch return 16).?, "two")) return 17;
+    } else if (scenario == 1) {
+        if (root.len != 3 or root.children.len != 0 or root.null_count != 0) return 18;
+    } else if (scenario == 2) {
+        if (root.len != 2 or root.children.len != 2) return 19;
+        const ids = (root.child(0) catch return 20).int32;
+        if ((ids.get(0) catch return 21) != 7 or (ids.get(1) catch return 22) != 8) return 23;
+        const labels = (root.child(1) catch return 24).utf8;
+        if (!std.mem.eql(u8, (labels.get(1) catch return 25).?, "数据")) return 26;
+    } else return 27;
+    return 0;
+}
+
 export fn arrowz_stream_fixture(kind: u32, stream: *cs.ArrowArrayStream) c_int {
     var consumer = z.ImportedStream.take(stream) catch return 1;
     defer consumer.deinit();

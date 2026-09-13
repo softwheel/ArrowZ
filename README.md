@@ -103,6 +103,15 @@ success clears both sources. Use `borrow` for a native view, `move` for explicit
 relocation, and `deinit` to invoke both producer callbacks exactly once. Do not
 copy the owner.
 
+`arrowz.ImportedStruct.take(allocator, &c_array, &c_schema)` accepts a recursive
+`+s` C Data tree with supported leaf children. It validates every descendant and
+allocates only Zig view descriptors before moving either root; errors leave both
+roots with the producer. `borrow` returns a recursive native `ArrayView`, `move`
+relocates ownership, and `deinit` releases the producer roots once. Never copy the
+owner or outlive it with a borrowed view. Children must cover the parent's logical
+slice. This does not yet reconstruct an owning native `Schema` or directly read
+record batches from `ImportedStream`.
+
 `arrowz.ImportedStream.take(&c_stream)` moves a validated C Stream callback table.
 Call `readSchema` once, then `next` until it returns `null`. Each live result is an
 independently owned `StreamChunk`; its native view remains valid if the stream is
@@ -136,6 +145,7 @@ the [native struct-array spec](specs/0007-native-struct-array/spec.md), and
 the [recursive struct-export spec](specs/0008-struct-c-data-export/spec.md),
 the [borrowed C Data import spec](specs/0009-c-data-borrowed-import/spec.md), alongside
 the [ownership-taking C Data import spec](specs/0010-c-data-owned-import/spec.md),
-the [C Stream leaf consumer spec](specs/0011-c-stream-leaf-consumer/spec.md), alongside
+the [C Stream leaf consumer spec](specs/0011-c-stream-leaf-consumer/spec.md),
+the [recursive C Data import spec](specs/0012-recursive-c-data-import/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
