@@ -46,6 +46,8 @@ lib.arrowz_take_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowAr
 lib.arrowz_take_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArrayStream)]
 lib.arrowz_stream_fixture.restype = ct.c_int
+lib.arrowz_recursive_import_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
+lib.arrowz_recursive_import_fixture.restype = ct.c_int
 lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_batch_fixture.restype = ct.c_int
 lib.arrowz_nested_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
@@ -59,10 +61,34 @@ for kind, cls in enumerate((ArrowArray, ArrowSchema, ArrowArrayStream)):
     for i, (name, _) in enumerate(cls._fields_):
         assert lib.arrowz_abi_offset(kind, i) == getattr(cls, name).offset
 
+cases = 0
+inner = pa.StructArray.from_arrays(
+    [pa.array([40, 41, 42, 43], type=pa.int32())], names=["id"],
+    mask=pa.array([False, False, True, False]),
+)
+outer = pa.StructArray.from_arrays(
+    [inner, pa.array(["zero", None, "two", "three"])], names=["inner", "label"],
+    mask=pa.array([False, True, False, False]),
+).slice(1, 2)
+zero_child = pa.array([{}, {}, {}], type=pa.struct([]))
+batch_source = pa.record_batch(
+    [pa.array([7, 8], type=pa.int32()), pa.array(["zero", "数据"])],
+    names=["id", "label"],
+)
+for scenario, source in enumerate((outer, zero_child, batch_source)):
+    raw, schema = ArrowArray(), ArrowSchema()
+    source._export_to_c(ct.addressof(raw), ct.addressof(schema))
+    try:
+        assert lib.arrowz_recursive_import_fixture(scenario, ct.byref(raw), ct.byref(schema)) == 0, scenario
+        assert not raw.release and not schema.release
+    finally:
+        release(raw)
+        release(schema)
+    cases += 1
+
 types = [pa.int8(), pa.uint8(), pa.int16(), pa.uint16(), pa.int32(), pa.uint32(),
          pa.int64(), pa.uint64(), pa.float32(), pa.float64(), pa.bool_(),
          pa.binary(), pa.string()]
-cases = 0
 for kind, dtype in enumerate(types):
     for scenario in range(5):
         raw, schema = ArrowArray(), ArrowSchema()
