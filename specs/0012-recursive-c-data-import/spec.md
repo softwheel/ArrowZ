@@ -1,6 +1,6 @@
 # Spec 0012: Recursive C Data struct import
 
-Status: Implemented; awaiting published-head CI.
+Status: Verified on published implementation head; final evidence-head CI pending.
 
 ## Requirements
 
@@ -40,7 +40,8 @@ root schema, then descriptors; `move` transfers the singular owner explicitly.
 - [x] Independent PyArrow-produced nested struct and record-batch C Data inputs.
 - [x] Pinned Zig 0.16.0 Debug/ReleaseSafe native, example, formatting,
       interoperability and no-runtime-dependency gates locally.
-- [ ] Published-head CI gates and repository review/protection checks.
+- [x] Published implementation-head CI gates (run 34769337801).
+- [ ] Final evidence-head CI and repository review/protection checks.
 
 Record-batch schema metadata reconstruction and direct C Stream record-batch
 integration remain later slices; this slice returns recursive native struct views.

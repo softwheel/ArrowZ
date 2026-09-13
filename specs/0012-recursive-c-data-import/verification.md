@@ -25,6 +25,12 @@ failure cleanup, root release-once and validation-before-move are native tests.
 The 213 count includes 3 new PyArrow-produced nested, zero-child and record-batch
 struct import cases. PyArrow is not a runtime SDK dependency.
 
-Pending: published-head CI and repository gates. Next slice: reconstruct native
+Published implementation head `2205a02b2e0688c5a82c0c517deaf354f2aa00a2`
+passed [CI run 34769337801](https://github.com/softwheel/ArrowZ/actions/runs/34769337801),
+both `Native Zig (Debug)` and `Native Zig (ReleaseSafe)` successful. The workflow
+executes the same gates and retains verification artifacts. No reviews or review
+threads were recorded at this point; PR #13 was mergeable, but not yet merged.
+
+Pending: final evidence-only published-head CI and repository gates. Next slice: reconstruct native
 record-batch schema metadata and integrate recursive import into C Stream chunks.
 ABI input buffers have no lengths; trusted producer extent is still required.
