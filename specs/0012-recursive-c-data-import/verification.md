@@ -31,6 +31,13 @@ both `Native Zig (Debug)` and `Native Zig (ReleaseSafe)` successful. The workflo
 executes the same gates and retains verification artifacts. No reviews or review
 threads were recorded at this point; PR #13 was mergeable, but not yet merged.
 
-Pending: final evidence-only published-head CI and repository gates. Next slice: reconstruct native
-record-batch schema metadata and integrate recursive import into C Stream chunks.
+Final evidence head `ff799fb0bcdda714ed9d0dd4408f0b1e267d6d5f` passed
+[CI run 34769450177](https://github.com/softwheel/ArrowZ/actions/runs/34769450177)
+on 2026-09-13: both Native Zig Debug and ReleaseSafe jobs succeeded on the
+exact final proposed commit. PR #13 reported mergeable with no reviews or
+review threads; it was squash-merged as main commit
+`9c3df4d7b3f5d489e309e94f82fc158efff0c6f0`.
+
+Next slice: reconstruct native record-batch field/schema metadata from C Data
+(Spec 0013), then integrate recursive import into C Stream chunks.
 ABI input buffers have no lengths; trusted producer extent is still required.
