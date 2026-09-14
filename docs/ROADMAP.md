@@ -34,6 +34,8 @@ specs/0010-c-data-owned-import/spec.md.
 The first C Stream consumer slice is governed by
 specs/0011-c-stream-leaf-consumer/spec.md.
 Recursive struct C Data import is governed by
-specs/0012-recursive-c-data-import/spec.md.
+specs/0012-recursive-c-data-import/spec.md, verified in PR #13.
+Native record-batch schema reconstruction is scoped by
+specs/0013-c-data-record-batch-schema/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.

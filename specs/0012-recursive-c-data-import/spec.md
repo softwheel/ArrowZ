@@ -1,6 +1,6 @@
 # Spec 0012: Recursive C Data struct import
 
-Status: Verified on published implementation head; final evidence-head CI pending.
+Status: Verified for scoped Linux x86_64 gates in PR #13.
 
 ## Requirements
 
@@ -41,7 +41,7 @@ root schema, then descriptors; `move` transfers the singular owner explicitly.
 - [x] Pinned Zig 0.16.0 Debug/ReleaseSafe native, example, formatting,
       interoperability and no-runtime-dependency gates locally.
 - [x] Published implementation-head CI gates (run 34769337801).
-- [ ] Final evidence-head CI and repository review/protection checks.
+- [x] Final evidence-head CI (run 34769450177), mergeability and review-thread checks.
 
 Record-batch schema metadata reconstruction and direct C Stream record-batch
 integration remain later slices; this slice returns recursive native struct views.
