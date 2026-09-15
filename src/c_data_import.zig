@@ -827,8 +827,8 @@ fn batchImportScenario(allocator: std.mem.Allocator) !void {
         return err;
     };
     name[0] = 'x';
-    field_metadata[12] = 'x';
-    schema_metadata[14] = 'x';
+    field_metadata[9] = 'x';
+    schema_metadata[18] = 'x';
     const batch = try owner.borrow();
     try std.testing.expectEqual(@as(usize, 2), batch.row_count);
     try std.testing.expectEqualStrings("数据", batch.schema.fields[0].name);
