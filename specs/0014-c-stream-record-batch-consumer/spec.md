@@ -1,6 +1,6 @@
 # Spec 0014: Native C Stream record-batch consumer
 
-Status: Accepted for implementation.
+Status: Implemented; published exact-head gates pending.
 
 ## Requirements
 
@@ -42,16 +42,16 @@ deinit behavior and therefore needs no second stream-specific batch abstraction.
 
 ## Tasks and acceptance gates
 
-- [ ] Array-only record-batch ownership with borrowed C schema; exact cleanup,
+- [x] Array-only record-batch ownership with borrowed C schema; exact cleanup,
       explicit moves and batch lifetime independent of stream/schema release.
-- [ ] Record-batch stream pull, shared cached EOS, wrong-method rejection before
+- [x] Record-batch stream pull, shared cached EOS, wrong-method rejection before
       `get_next`, producer error behavior and recoverable validation failures.
-- [ ] Recursive/sliced/nullable fields, metadata, multiple chunks and zero-column
+- [x] Recursive/sliced/nullable fields, metadata, multiple chunks and zero-column
       batches under Spec 0013 limits.
-- [ ] Exhaustive allocator-failure tests with exact producer release counts.
-- [ ] PyArrow `RecordBatchReader` C Stream interoperability with recursive values,
+- [x] Exhaustive allocator-failure tests with exact producer release counts.
+- [x] PyArrow `RecordBatchReader` C Stream interoperability with recursive values,
       schema fidelity and zero-copy buffer-address assertions.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, examples,
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, examples,
       interoperability and no-runtime-dependency gates locally and in CI.
 - [ ] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
 
