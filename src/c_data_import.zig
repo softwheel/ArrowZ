@@ -60,6 +60,22 @@ pub const ImportedRecordBatch = struct {
 
     /// Completes recursive validation and every allocation before moving roots.
     pub fn take(allocator: std.mem.Allocator, array: *c.ArrowArray, schema: *c.ArrowSchema) !ImportedRecordBatch {
+        var result = try prepare(allocator, array, schema);
+        result.c_schema = schema.*;
+        array.* = .{};
+        schema.* = .{};
+        return result;
+    }
+
+    /// Borrows the schema while preparing, then moves only the array root.
+    /// The returned native schema is an independent deep copy.
+    pub fn takeArray(allocator: std.mem.Allocator, array: *c.ArrowArray, schema: *const c.ArrowSchema) !ImportedRecordBatch {
+        const result = try prepare(allocator, array, schema);
+        array.* = .{};
+        return result;
+    }
+
+    fn prepare(allocator: std.mem.Allocator, array: *const c.ArrowArray, schema: *const c.ArrowSchema) !ImportedRecordBatch {
         const view = try buildStruct(allocator, array, schema);
         errdefer freeView(allocator, view);
         const root = view.struct_;
@@ -84,18 +100,15 @@ pub const ImportedRecordBatch = struct {
         const result: ImportedRecordBatch = .{
             .allocator = allocator,
             .array = array.*,
-            .c_schema = schema.*,
             .view = view,
             .native_schema = native_schema,
             .columns = columns,
         };
-        array.* = .{};
-        schema.* = .{};
         return result;
     }
 
     pub fn borrow(self: *const ImportedRecordBatch) !record_batch.RecordBatch {
-        if (self.array.release == null or self.c_schema.release == null or self.native_schema == null or self.view == null) return error.Released;
+        if (self.array.release == null or self.native_schema == null or self.view == null) return error.Released;
         return record_batch.RecordBatch.init(&self.native_schema.?, self.columns, self.view.?.struct_.len);
     }
 
@@ -851,6 +864,41 @@ fn batchImportScenario(allocator: std.mem.Allocator) !void {
 
 test "record batch schema import deep copies metadata and rolls back every allocation failure" {
     try std.testing.checkAllAllocationFailures(std.testing.allocator, batchImportScenario, .{});
+}
+
+fn batchArrayOnlyScenario(allocator: std.mem.Allocator) !void {
+    const values = [_]i32{42};
+    var leaf_buffers = [_]?*const anyopaque{ null, @ptrCast(&values) };
+    var root_buffers = [_]?*const anyopaque{null};
+    var child: c.ArrowArray = .{ .length = 1, .n_buffers = 2, .buffers = &leaf_buffers, .release = noOpArrayRelease };
+    var array_children = [_]?*c.ArrowArray{&child};
+    var counts: ReleaseCounts = .{};
+    var array: c.ArrowArray = .{ .length = 1, .n_buffers = 1, .n_children = 1, .buffers = &root_buffers, .children = &array_children, .release = countArrayRelease, .private_data = &counts };
+    var child_schema: c.ArrowSchema = .{ .format = "i", .name = "answer", .flags = 0, .release = noOpSchemaRelease };
+    var schema_children = [_]?*c.ArrowSchema{&child_schema};
+    var schema: c.ArrowSchema = .{ .format = "+s", .n_children = 1, .children = &schema_children, .release = countSchemaRelease, .private_data = &counts };
+
+    var owner = ImportedRecordBatch.takeArray(allocator, &array, &schema) catch |err| {
+        try std.testing.expect(array.release != null and schema.release != null);
+        c.releaseArray(&array);
+        c.releaseSchema(&schema);
+        try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+        try std.testing.expectEqual(@as(usize, 1), counts.schemas);
+        return err;
+    };
+    try std.testing.expect(array.release == null and schema.release != null);
+    c.releaseSchema(&schema);
+    const batch = try owner.borrow();
+    try std.testing.expectEqualStrings("answer", batch.schema.fields[0].name);
+    try std.testing.expectEqual(@as(?i32, 42), try (try batch.column(0)).int32.get(0));
+    owner.deinit();
+    owner.deinit();
+    try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 1), counts.schemas);
+}
+
+test "array-only batch import borrows schema and rolls back every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, batchArrayOnlyScenario, .{});
 }
 
 test "record batch schema import rejects lost row validity, flags and malformed metadata before move" {

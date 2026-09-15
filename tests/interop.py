@@ -45,6 +45,8 @@ lib.arrowz_import_fixture.restype = ct.c_int
 lib.arrowz_take_fixture.argtypes = [ct.c_uint32, ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_take_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArrayStream)]
+lib.arrowz_record_batch_stream_fixture.argtypes = [ct.POINTER(ArrowArrayStream), ct.c_size_t, ct.c_size_t]
+lib.arrowz_record_batch_stream_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.restype = ct.c_int
 lib.arrowz_recursive_import_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_recursive_import_fixture.restype = ct.c_int
@@ -206,6 +208,32 @@ for kind, dtype in enumerate(types):
     assert not stream.release
     assert counts == {"schema": 1, "next": 2, "error": 0, "release": 1}, (dtype, counts)
     cases += 1
+
+# PyArrow's standard RecordBatchReader exports a recursive C Stream. Zig owns the
+# stream and each batch independently while retaining zero-copy value buffers.
+stream_schema = pa.schema([
+    pa.field("id", pa.int32(), nullable=False),
+    pa.field("payload", pa.struct([pa.field("score", pa.int32(), nullable=False)])),
+], metadata={b"source": b"pyarrow-stream"})
+stream_batches = [
+    pa.RecordBatch.from_arrays([
+        pa.array([8, 9], type=pa.int32()),
+        pa.StructArray.from_arrays([pa.array([80, 90], type=pa.int32())], names=["score"]),
+    ], schema=stream_schema),
+    pa.RecordBatch.from_arrays([
+        pa.array([10], type=pa.int32()),
+        pa.StructArray.from_arrays([pa.array([100], type=pa.int32())], names=["score"]),
+    ], schema=stream_schema),
+]
+stream_addresses = [batch.column(0).buffers()[1].address for batch in stream_batches]
+reader = pa.RecordBatchReader.from_batches(stream_schema, stream_batches)
+stream = ArrowArrayStream()
+reader._export_to_c(ct.addressof(stream))
+assert lib.arrowz_record_batch_stream_fixture(
+    ct.byref(stream), stream_addresses[0], stream_addresses[1]
+) == 0
+assert not stream.release
+cases += 1
 
 # Ownership direction: PyArrow produces both base structures, Zig moves them,
 # validates through its native view, and invokes each producer callback on exit.

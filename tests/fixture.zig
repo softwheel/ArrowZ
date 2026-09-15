@@ -74,6 +74,45 @@ export fn arrowz_stream_fixture(kind: u32, stream: *cs.ArrowArrayStream) c_int {
     return 0;
 }
 
+export fn arrowz_record_batch_stream_fixture(stream: *cs.ArrowArrayStream, first_address: usize, second_address: usize) c_int {
+    var consumer = z.ImportedStream.take(stream) catch return 1;
+    defer consumer.deinit();
+    consumer.readSchema() catch return 2;
+    if (consumer.next()) |_| return 3 else |err| if (err != error.UnsupportedType) return 3;
+    var first = (consumer.nextRecordBatch(std.heap.page_allocator) catch return 4) orelse return 5;
+    defer first.deinit();
+    var second = (consumer.nextRecordBatch(std.heap.page_allocator) catch return 6) orelse return 7;
+    defer second.deinit();
+    if ((consumer.nextRecordBatch(std.heap.page_allocator) catch return 8) != null) return 9;
+    if ((consumer.nextRecordBatch(std.heap.page_allocator) catch return 10) != null) return 11;
+    consumer.deinit();
+    if (stream.release != null) return 12;
+
+    const first_batch = first.borrow() catch return 13;
+    const second_batch = second.borrow() catch return 14;
+    if (first_batch.row_count != 2 or second_batch.row_count != 1) return 15;
+    if (first_batch.schema.fields.len != 2 or first_batch.schema.metadata.len != 1) return 16;
+    if (!std.mem.eql(u8, first_batch.schema.metadata[0].key, "source") or
+        !std.mem.eql(u8, first_batch.schema.metadata[0].value, "pyarrow-stream")) return 17;
+    if (!std.mem.eql(u8, first_batch.schema.fields[0].name, "id") or first_batch.schema.fields[0].nullable) return 18;
+    if (!std.mem.eql(u8, first_batch.schema.fields[1].name, "payload") or first_batch.schema.fields[1].children.len != 1) return 19;
+    const first_ids = (first_batch.column(0) catch return 20).int32;
+    const second_ids = (second_batch.column(0) catch return 21).int32;
+    if ((first_ids.get(0) catch return 22) != 8 or (first_ids.get(1) catch return 23) != 9) return 24;
+    if ((second_ids.get(0) catch return 25) != 10) return 26;
+    if (@intFromPtr(first_ids.values.ptr) != first_address or @intFromPtr(second_ids.values.ptr) != second_address) return 27;
+    const first_scores = ((first_batch.column(1) catch return 28).struct_.child(0) catch return 29).int32;
+    if ((first_scores.get(0) catch return 30) != 80 or (first_scores.get(1) catch return 31) != 90) return 32;
+
+    first.deinit();
+    if ((second_ids.get(0) catch return 33) != 10) return 34;
+    var moved = second.move();
+    if (second.borrow()) |_| return 35 else |err| if (err != error.Released) return 35;
+    moved.deinit();
+    moved.deinit();
+    return 0;
+}
+
 export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) c_int {
     consume(kind, scenario, array, schema) catch return 1;
     return 0;
