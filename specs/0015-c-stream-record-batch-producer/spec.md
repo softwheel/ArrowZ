@@ -1,6 +1,6 @@
 # Spec 0015: Native record-batch C Stream producer
 
-Status: Implemented; exact proposed-head CI and publication gates pending.
+Status: Verified.
 
 ## Requirements
 
@@ -52,7 +52,7 @@ The stream release callback destroys remaining owners and the state exactly once
       schema/metadata/values and observes zero-copy value-buffer addresses.
 - [x] Pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, examples,
       interoperability and no-runtime-dependency gates locally and in CI.
-- [ ] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
+- [x] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
 
 Do not mark Verified or begin IPC/FlatBuffers until every scoped gate passes.
 Recheck the current official Arrow C Stream and C Data contracts before final

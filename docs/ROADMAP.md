@@ -41,5 +41,8 @@ Recursive C Stream record-batch consumption is scoped by
 specs/0014-c-stream-record-batch-consumer/spec.md.
 Native record-batch C Stream production is scoped by
 specs/0015-c-stream-record-batch-producer/spec.md.
+Specs 0009 through 0015 now cover M2's bidirectional C Data and C Stream scope;
+the next gate is an explicit M2 acceptance reconciliation and public API review
+before beginning M3 IPC/FlatBuffers work.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.

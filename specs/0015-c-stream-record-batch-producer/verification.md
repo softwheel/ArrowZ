@@ -23,8 +23,22 @@ The Apache Arrow v25.0.1 C Stream and C Data documentation was rechecked on
 null-release EOS marker, independent result lifetimes, serialized-callback
 assumption, schema metadata encoding, and release-callback ownership rules.
 
-Exact proposed-head CI, mergeability, review and unresolved-thread evidence are
-pending publication.
+Published implementation/evidence head
+`acf28cb268791a671f1768694b8371ad97d0c48a` passed
+[CI run 35019892935](https://github.com/softwheel/ArrowZ/actions/runs/35019892935)
+on 2026-09-15. Both Native Zig Debug and Native Zig ReleaseSafe completed every
+repository gate successfully on the exact proposed commit. The matching push run
+35019880780 also passed both jobs.
+
+GitHub reported PR #19 clean and mergeable with no reviews or unresolved review
+comments; repository rulesets were empty, and GitHub accepted the protected
+expected-head merge without bypass or force. PR #19 was squash-merged as main
+commit `cb2cf36563a54e84a4a8deacab30560afc80550d` on 2026-09-15.
+
+Spec 0015 is complete. M2 now has native bidirectional C Data and C Stream
+coverage for the supported leaf and recursive struct/record-batch types. The
+next bounded slice is M2 acceptance reconciliation and public API documentation;
+only after that gate should M3 native IPC/FlatBuffers design begin.
 
 Required verification:
 
