@@ -15,6 +15,8 @@ but preserve arbitrary binary metadata keys/values.
 
 Expose a read-only native `RecordBatch` that borrows the imported `+s`
 array's zero-copy columns and owns a deep-copied Zig schema for its lifetime.
+Reject a root struct with null rows because native `RecordBatch` has no row-level
+validity representation; child and nested-struct nullability remain supported.
 Construction validates the entire recursive C Data array/schema pair before
 moving either producer base; any invalid layout or allocator failure preserves
 both caller bases and cleans every Zig allocation. The borrowed batch and
