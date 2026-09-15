@@ -1,6 +1,6 @@
 # Spec 0014: Native C Stream record-batch consumer
 
-Status: Implemented; final evidence-head gates pending.
+Status: Verified for scoped Linux x86_64 gates in PR #17.
 
 ## Requirements
 
@@ -53,7 +53,7 @@ deinit behavior and therefore needs no second stream-specific batch abstraction.
       schema fidelity and zero-copy buffer-address assertions.
 - [x] Pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, examples,
       interoperability and no-runtime-dependency gates locally and in CI.
-- [ ] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
+- [x] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
 
 Do not mark Verified or begin C Stream production until every scoped gate passes.
 The Arrow C Stream and C Data contracts must be rechecked against current official

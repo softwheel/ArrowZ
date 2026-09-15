@@ -43,5 +43,16 @@ Published implementation/evidence head
 `bcb754ff1a8ac470f6293c7bf1681719a0e4b7fe` passed
 [CI run 35016680480](https://github.com/softwheel/ArrowZ/actions/runs/35016680480)
 on 2026-09-15. Both Native Zig Debug and Native Zig ReleaseSafe completed every
-repository gate successfully. Final evidence-head CI plus mergeability, review
-and unresolved-thread checks remain pending.
+repository gate successfully on that implementation/evidence head.
+
+Final evidence head `da3c543fbbd5bf5d36bef3929aba91a7b643c901`
+passed [CI run 35016972128](https://github.com/softwheel/ArrowZ/actions/runs/35016972128):
+both Native Zig Debug and ReleaseSafe succeeded on the exact proposed commit.
+GitHub reported PR #17 clean and mergeable with no reviews or unresolved review
+comments; repository rulesets were empty, and GitHub accepted the protected
+expected-head merge without bypass or force. PR #17 was squash-merged as main
+commit `13f00edc59364529f2da28a9ec3ec39bba628bcd` on 2026-09-15.
+
+Spec 0014 is complete. Remaining M2 work starts with a new spec for a native
+record-batch C Stream producer, including callback lifetime, error and ownership
+behavior; IPC/FlatBuffers remains M3.
