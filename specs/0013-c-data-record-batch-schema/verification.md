@@ -1,13 +1,38 @@
 # Record-batch schema import verification and handoff
 
-Pending implementation. Current main at specification time:
-`9c3df4d7b3f5d489e309e94f82fc158efff0c6f0`.
-No native Zig or independent PyArrow tests for this slice have run.
-The current execution workspace was unavailable on 2026-09-14, so this
-change is specification and previous-CI reconciliation only.
+Spec amendment commit: `8a1e76e4472b1220accf30af7d03569dcf4c1881`.
+Implementation commit: `5a5e818389bf441ce83e357c59c678ac343e68df`.
+Deep-copy mutation assertion correction: `f53ccad56351d898690a409a835630cd2f029776`.
 
-Before implementation, re-read Spec 0013 and inspect source on current main.
-Use pinned Zig 0.16.0 and PyArrow only for interoperability tests. Record
-implementation commit, exact Debug/ReleaseSafe commands/results, allocator
-and malformed-input evidence, final-head CI URL, review/protection state and
-remaining gaps here. Next after this slice: recursive C Stream batch consumer.
+Local verification on 2026-09-15, Linux x86_64, repository-pinned Zig 0.16.0
+and test-only PyArrow 23.0.1:
+
+```sh
+zig fmt --check build.zig build.zig.zon src tests/fixture.zig examples
+zig build test -Doptimize=Debug --summary all
+zig build example -Doptimize=Debug --summary all
+zig build interop -Doptimize=Debug --summary all
+PYTHONPATH=../pydeps python3 tests/interop.py zig-out/lib/libarrowz_fixture.so
+zig build test -Doptimize=ReleaseSafe --summary all
+zig build example -Doptimize=ReleaseSafe --summary all
+zig build interop -Doptimize=ReleaseSafe --summary all
+PYTHONPATH=../pydeps python3 tests/interop.py zig-out/lib/libarrowz_fixture.so
+readelf -d zig-out/lib/libarrowz_fixture.so # no NEEDED entry in either mode
+```
+
+All local gates passed in both modes: 47/47 Zig tests, native example, and 214
+independent interoperability cases. Native tests cover exhaustive allocator
+failure rollback, validation-before-move, root release exactly once, explicit
+move, deep-copy independence, root-null rejection, malformed metadata/flags,
+zero columns and duplicate field order. The new PyArrow-produced sliced nested
+batch covers recursive names, nullability, schema/field metadata with embedded
+NUL bytes, values and zero-copy primitive buffers. PyArrow is test-only.
+
+Limits: nesting depth 64, children per node 65,536, metadata pairs 1,024,
+metadata bytes 16 MiB and names 1 MiB. C Data carries no physical byte lengths,
+so arbitrary invalid pointers cannot be made safe; producer memory must be
+trusted as the interface requires. Root row validity is rejected because the
+native RecordBatch model has no row bitmap.
+
+Pending: exact published-head CI and review/protection checks. Next after this
+slice: specify and implement recursive C Stream record-batch consumption.

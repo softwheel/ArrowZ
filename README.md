@@ -141,7 +141,7 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 210 independent C Data/Stream/PyArrow cases, allocation
+ReleaseSafe, including 214 independent C Data/Stream/PyArrow cases, allocation
 failure paths and ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and

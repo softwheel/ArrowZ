@@ -1,6 +1,6 @@
 # Spec 0013: Native record-batch schema reconstruction from C Data
 
-Status: Planned; no semantic implementation yet.
+Status: Implemented; awaiting published-head CI.
 
 ## Requirements
 
@@ -52,16 +52,17 @@ is deliberately the next spec, not part of this slice.
 
 ## Tasks and acceptance gates
 
-- [ ] Recursive names, nullable flags, ordered child fields and schema/field
+- [x] Recursive names, nullable flags, ordered child fields and schema/field
       metadata (binary including embedded NUL), deep-copy ownership.
-- [ ] Limits, malformed counts/lengths/flags/formats and unsupported dictionary
+- [x] Limits, malformed counts/lengths/flags/formats and unsupported dictionary
       rejection; failure-atomic validation, exact root release and moves.
-- [ ] Sliced, nested, nullable, zero-column and duplicate-name batch cases.
-- [ ] Exhaustive allocator-failure tests and producer-owned-pointer lifetime tests.
-- [ ] PyArrow-produced record-batch C Data including names/metadata/nullability;
+- [x] Sliced, nested, nullable, zero-column and duplicate-name batch cases.
+- [x] Exhaustive allocator-failure tests and producer-owned-pointer lifetime tests.
+- [x] PyArrow-produced record-batch C Data including names/metadata/nullability;
       assert values, schema equality and zero-copy buffer addresses.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe test, example, format, interop,
-      runtime-dependency checks locally and on final proposed CI commit.
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe test, example, format, interop and
+      runtime-dependency checks locally.
+- [ ] Final proposed-head CI and repository review/protection checks.
 
 Do not mark Verified or broaden `ImportedStream` until these gates pass.
 The Arrow C Data schema/metadata contract was reviewed on 2026-09-14:
