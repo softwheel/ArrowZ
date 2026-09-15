@@ -48,6 +48,8 @@ lib.arrowz_stream_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArrayStream)]
 lib.arrowz_stream_fixture.restype = ct.c_int
 lib.arrowz_recursive_import_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_recursive_import_fixture.restype = ct.c_int
+lib.arrowz_record_batch_import_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
+lib.arrowz_record_batch_import_fixture.restype = ct.c_int
 lib.arrowz_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_batch_fixture.restype = ct.c_int
 lib.arrowz_nested_batch_fixture.argtypes = [ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
@@ -62,6 +64,26 @@ for kind, cls in enumerate((ArrowArray, ArrowSchema, ArrowArrayStream)):
         assert lib.arrowz_abi_offset(kind, i) == getattr(cls, name).offset
 
 cases = 0
+import_schema = pa.schema([
+    pa.field("id", pa.int32(), nullable=False, metadata={b"k\0": b"v\0\xff"}),
+    pa.field("payload", pa.struct([
+        pa.field("score", pa.int32(), nullable=False, metadata={b"unit": b"points"}),
+    ]), metadata={b"level": b"outer"}),
+], metadata={b"source": b"pyarrow"})
+import_batch = pa.record_batch([
+    pa.array([7, 8, 9], type=pa.int32()),
+    pa.StructArray.from_arrays([pa.array([70, 80, 90], type=pa.int32())], names=["score"]),
+], schema=import_schema).slice(1, 2)
+raw, schema = ArrowArray(), ArrowSchema()
+import_batch._export_to_c(ct.addressof(raw), ct.addressof(schema))
+try:
+    assert lib.arrowz_record_batch_import_fixture(ct.byref(raw), ct.byref(schema)) == 0
+    assert not raw.release and not schema.release
+finally:
+    release(raw)
+    release(schema)
+cases += 1
+
 inner = pa.StructArray.from_arrays(
     [pa.array([40, 41, 42, 43], type=pa.int32())], names=["id"],
     mask=pa.array([False, False, True, False]),

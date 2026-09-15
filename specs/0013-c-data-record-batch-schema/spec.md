@@ -1,6 +1,6 @@
 # Spec 0013: Native record-batch schema reconstruction from C Data
 
-Status: Planned; no semantic implementation yet.
+Status: Verified on published implementation head; final evidence-head CI pending.
 
 ## Requirements
 
@@ -15,6 +15,8 @@ but preserve arbitrary binary metadata keys/values.
 
 Expose a read-only native `RecordBatch` that borrows the imported `+s`
 array's zero-copy columns and owns a deep-copied Zig schema for its lifetime.
+Reject a root struct with null rows because native `RecordBatch` has no row-level
+validity representation; child and nested-struct nullability remain supported.
 Construction validates the entire recursive C Data array/schema pair before
 moving either producer base; any invalid layout or allocator failure preserves
 both caller bases and cleans every Zig allocation. The borrowed batch and
@@ -50,16 +52,18 @@ is deliberately the next spec, not part of this slice.
 
 ## Tasks and acceptance gates
 
-- [ ] Recursive names, nullable flags, ordered child fields and schema/field
+- [x] Recursive names, nullable flags, ordered child fields and schema/field
       metadata (binary including embedded NUL), deep-copy ownership.
-- [ ] Limits, malformed counts/lengths/flags/formats and unsupported dictionary
+- [x] Limits, malformed counts/lengths/flags/formats and unsupported dictionary
       rejection; failure-atomic validation, exact root release and moves.
-- [ ] Sliced, nested, nullable, zero-column and duplicate-name batch cases.
-- [ ] Exhaustive allocator-failure tests and producer-owned-pointer lifetime tests.
-- [ ] PyArrow-produced record-batch C Data including names/metadata/nullability;
+- [x] Sliced, nested, nullable, zero-column and duplicate-name batch cases.
+- [x] Exhaustive allocator-failure tests and producer-owned-pointer lifetime tests.
+- [x] PyArrow-produced record-batch C Data including names/metadata/nullability;
       assert values, schema equality and zero-copy buffer addresses.
-- [ ] Pinned Zig 0.16.0 Debug and ReleaseSafe test, example, format, interop,
-      runtime-dependency checks locally and on final proposed CI commit.
+- [x] Pinned Zig 0.16.0 Debug and ReleaseSafe test, example, format, interop and
+      runtime-dependency checks locally.
+- [x] Published implementation-head CI gates (run 34965588452).
+- [ ] Final evidence-head CI and repository review/protection checks.
 
 Do not mark Verified or broaden `ImportedStream` until these gates pass.
 The Arrow C Data schema/metadata contract was reviewed on 2026-09-14:

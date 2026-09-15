@@ -7,6 +7,7 @@ pub const c_data = @import("c_data.zig");
 pub const c_data_import = @import("c_data_import.zig");
 pub const ImportedArray = c_data_import.ImportedArray;
 pub const ImportedStruct = c_data_import.ImportedStruct;
+pub const ImportedRecordBatch = c_data_import.ImportedRecordBatch;
 pub const c_data_batch = @import("c_data_batch.zig");
 pub const c_stream = @import("c_stream.zig");
 pub const ArrowArrayStream = c_stream.ArrowArrayStream;
