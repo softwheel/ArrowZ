@@ -1,4 +1,4 @@
-//! Pure-Zig Arrow C Stream ABI and synchronous leaf-array consumer.
+//! Pure-Zig Arrow C Stream ABI and synchronous array/record-batch consumer.
 const std = @import("std");
 const c = @import("c_data.zig");
 const data_import = @import("c_data_import.zig");
@@ -82,6 +82,7 @@ pub const ImportedStream = struct {
     pub fn next(self: *ImportedStream) StreamError!?StreamChunk {
         try self.requireLive();
         if (self.schema.release == null) return error.SchemaNotReady;
+        if (isStructSchema(&self.schema)) return error.UnsupportedType;
         if (self.ended) return null;
         var output: c.ArrowArray = .{};
         const code = self.stream.get_next.?(&self.stream, &output);
@@ -100,6 +101,31 @@ pub const ImportedStream = struct {
             return err;
         };
         return .{ .array = output, .view = view };
+    }
+
+    /// Pulls one independently owned record batch from a `+s` stream.
+    /// The allocator owns recursive descriptors and a native schema deep copy.
+    pub fn nextRecordBatch(self: *ImportedStream, allocator: std.mem.Allocator) !?data_import.ImportedRecordBatch {
+        try self.requireLive();
+        if (self.schema.release == null) return error.SchemaNotReady;
+        if (!isStructSchema(&self.schema)) return error.UnsupportedType;
+        if (self.ended) return null;
+        var output: c.ArrowArray = .{};
+        const code = self.stream.get_next.?(&self.stream, &output);
+        if (code != 0) {
+            c.releaseArray(&output);
+            self.recordProducerError(code);
+            return error.ProducerError;
+        }
+        self.clearProducerError();
+        if (output.release == null) {
+            self.ended = true;
+            return null;
+        }
+        return data_import.ImportedRecordBatch.takeArray(allocator, &output, &self.schema) catch |err| {
+            c.releaseArray(&output);
+            return err;
+        };
     }
 
     pub fn lastErrorCode(self: *const ImportedStream) ?c_int {
@@ -142,6 +168,11 @@ pub const ImportedStream = struct {
     }
 };
 
+fn isStructSchema(schema: *const c.ArrowSchema) bool {
+    const format = schema.format orelse return false;
+    return format[0] == '+' and format[1] == 's' and format[2] == 0;
+}
+
 const TestState = struct {
     buffers: *[2]?*const anyopaque,
     schema_calls: usize = 0,
@@ -153,6 +184,84 @@ const TestState = struct {
     fail_schema: bool = false,
     fail_next: bool = false,
 };
+
+const BatchTestState = struct {
+    values: [1]i32 = .{42},
+    leaf_buffers: [2]?*const anyopaque = .{ null, null },
+    root_buffers: [1]?*const anyopaque = .{null},
+    child: c.ArrowArray = .{},
+    array_children: [1]?*c.ArrowArray = .{null},
+    child_schema: c.ArrowSchema = .{},
+    schema_children: [1]?*c.ArrowSchema = .{null},
+    next_calls: usize = 0,
+    array_releases: usize = 0,
+    schema_releases: usize = 0,
+    stream_releases: usize = 0,
+    invalid_first: bool = false,
+
+    fn prepare(self: *BatchTestState) void {
+        self.leaf_buffers[1] = @ptrCast(&self.values);
+        self.child = .{ .length = 1, .n_buffers = 2, .buffers = &self.leaf_buffers, .release = batchChildArrayRelease };
+        self.array_children[0] = &self.child;
+        self.child_schema = .{ .format = "i", .name = "answer", .flags = 0, .release = batchChildSchemaRelease };
+        self.schema_children[0] = &self.child_schema;
+    }
+};
+
+fn batchState(stream: *ArrowArrayStream) *BatchTestState {
+    return @ptrCast(@alignCast(stream.private_data.?));
+}
+
+fn batchGetSchema(stream: *ArrowArrayStream, output: *c.ArrowSchema) callconv(.c) c_int {
+    const state = batchState(stream);
+    output.* = .{ .format = "+s", .n_children = 1, .children = &state.schema_children, .release = batchSchemaRelease, .private_data = state };
+    return 0;
+}
+
+fn batchGetNext(stream: *ArrowArrayStream, output: *c.ArrowArray) callconv(.c) c_int {
+    const state = batchState(stream);
+    state.next_calls += 1;
+    const chunk_index = state.next_calls - 1;
+    const chunk_count: usize = if (state.invalid_first) 2 else 1;
+    if (chunk_index >= chunk_count) return 0;
+    output.* = .{ .length = 1, .n_buffers = if (state.invalid_first and chunk_index == 0) 2 else 1, .n_children = 1, .buffers = &state.root_buffers, .children = &state.array_children, .release = batchArrayRelease, .private_data = state };
+    return 0;
+}
+
+fn batchLastError(_: *ArrowArrayStream) callconv(.c) ?[*:0]const u8 {
+    return null;
+}
+
+fn batchArrayRelease(array: *c.ArrowArray) callconv(.c) void {
+    const state: *BatchTestState = @ptrCast(@alignCast(array.private_data.?));
+    state.array_releases += 1;
+    array.* = .{};
+}
+
+fn batchSchemaRelease(schema: *c.ArrowSchema) callconv(.c) void {
+    const state: *BatchTestState = @ptrCast(@alignCast(schema.private_data.?));
+    state.schema_releases += 1;
+    schema.* = .{};
+}
+
+fn batchChildArrayRelease(array: *c.ArrowArray) callconv(.c) void {
+    array.* = .{};
+}
+
+fn batchChildSchemaRelease(schema: *c.ArrowSchema) callconv(.c) void {
+    schema.* = .{};
+}
+
+fn batchStreamRelease(stream: *ArrowArrayStream) callconv(.c) void {
+    const state = batchState(stream);
+    state.stream_releases += 1;
+    stream.* = .{};
+}
+
+fn makeBatchTestStream(state: *BatchTestState) ArrowArrayStream {
+    state.prepare();
+    return .{ .get_schema = batchGetSchema, .get_next = batchGetNext, .get_last_error = batchLastError, .release = batchStreamRelease, .private_data = state };
+}
 
 fn testState(stream: *ArrowArrayStream) *TestState {
     return @ptrCast(@alignCast(stream.private_data.?));
@@ -231,6 +340,8 @@ test "stream schema, chunk, relocation, independent lifetime and cached EOS" {
     try std.testing.expectError(error.SchemaNotReady, consumer.next());
     try consumer.readSchema();
     try std.testing.expectError(error.SchemaAlreadyRead, consumer.readSchema());
+    try std.testing.expectError(error.UnsupportedType, consumer.nextRecordBatch(std.testing.allocator));
+    try std.testing.expectEqual(@as(usize, 0), state.next_calls);
     var chunk = (try consumer.next()).?;
     try std.testing.expectEqual(@as(?i32, 31), try (try chunk.borrow()).int32.get(1));
     try std.testing.expect((try consumer.next()) == null);
@@ -251,6 +362,52 @@ test "stream schema, chunk, relocation, independent lifetime and cached EOS" {
     moved_chunk.deinit();
     moved_chunk.deinit();
     try std.testing.expectEqual(@as(usize, 1), state.array_releases);
+}
+
+fn batchStreamAllocationScenario(allocator: std.mem.Allocator) !void {
+    var state: BatchTestState = .{};
+    var source = makeBatchTestStream(&state);
+    var consumer = try ImportedStream.take(&source);
+    try consumer.readSchema();
+    try std.testing.expectError(error.UnsupportedType, consumer.next());
+    try std.testing.expectEqual(@as(usize, 0), state.next_calls);
+    var owner = (consumer.nextRecordBatch(allocator) catch |err| {
+        consumer.deinit();
+        try std.testing.expectEqual(@as(usize, 1), state.array_releases);
+        try std.testing.expectEqual(@as(usize, 1), state.schema_releases);
+        try std.testing.expectEqual(@as(usize, 1), state.stream_releases);
+        return err;
+    }).?;
+    try std.testing.expect((try consumer.nextRecordBatch(allocator)) == null);
+    try std.testing.expect((try consumer.nextRecordBatch(allocator)) == null);
+    consumer.deinit();
+    const batch = try owner.borrow();
+    try std.testing.expectEqual(@as(?i32, 42), try (try batch.column(0)).int32.get(0));
+    owner.deinit();
+    try std.testing.expectEqual(@as(usize, 1), state.array_releases);
+    try std.testing.expectEqual(@as(usize, 1), state.schema_releases);
+    try std.testing.expectEqual(@as(usize, 1), state.stream_releases);
+    try std.testing.expectEqual(@as(usize, 2), state.next_calls);
+}
+
+test "record-batch stream survives every allocation failure and owns chunks independently" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, batchStreamAllocationScenario, .{});
+}
+
+test "record-batch stream releases malformed chunks and remains usable" {
+    var state: BatchTestState = .{ .invalid_first = true };
+    var source = makeBatchTestStream(&state);
+    var consumer = try ImportedStream.take(&source);
+    defer consumer.deinit();
+    try consumer.readSchema();
+    try std.testing.expectError(error.InvalidBufferCount, consumer.nextRecordBatch(std.testing.allocator));
+    try std.testing.expectEqual(@as(?c_int, null), consumer.lastErrorCode());
+    try std.testing.expectEqual(@as(usize, 1), state.array_releases);
+    var owner = (try consumer.nextRecordBatch(std.testing.allocator)).?;
+    defer owner.deinit();
+    try std.testing.expectEqual(@as(?i32, 42), try (try (try owner.borrow()).column(0)).int32.get(0));
+    try std.testing.expect((try consumer.nextRecordBatch(std.testing.allocator)) == null);
+    try std.testing.expectEqual(@as(usize, 3), state.next_calls);
 }
 
 test "stream producer errors retain errno and release live partial outputs" {
