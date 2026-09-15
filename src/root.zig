@@ -13,6 +13,7 @@ pub const c_stream = @import("c_stream.zig");
 pub const ArrowArrayStream = c_stream.ArrowArrayStream;
 pub const ImportedStream = c_stream.ImportedStream;
 pub const StreamChunk = c_stream.StreamChunk;
+pub const exportRecordBatchStream = c_stream.exportRecordBatchStream;
 pub const BooleanArray = @import("boolean.zig").BooleanArray;
 pub const BooleanBuilder = @import("boolean.zig").BooleanBuilder;
 pub const BooleanView = @import("boolean.zig").BooleanView;

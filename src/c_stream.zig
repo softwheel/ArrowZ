@@ -2,7 +2,11 @@
 const std = @import("std");
 const c = @import("c_data.zig");
 const data_import = @import("c_data_import.zig");
+const data_export = @import("c_data_batch.zig");
 const record_batch = @import("record_batch.zig");
+const owned_batch = @import("owned_batch.zig");
+const primitive = @import("primitive.zig");
+const schema_mod = @import("schema.zig");
 
 pub const ArrowArrayStream = extern struct {
     get_schema: ?*const fn (*ArrowArrayStream, *c.ArrowSchema) callconv(.c) c_int = null,
@@ -167,6 +171,97 @@ pub const ImportedStream = struct {
         self.error_text_read = false;
     }
 };
+
+const ExportedStreamState = struct {
+    allocator: std.mem.Allocator,
+    schema: schema_mod.Schema,
+    batches: []owned_batch.OwnedRecordBatch,
+    next_index: usize = 0,
+    last_error: ?[:0]const u8 = null,
+
+    fn getSchema(base: *ArrowArrayStream, output: *c.ArrowSchema) callconv(.c) c_int {
+        const self = exportedState(base);
+        output.* = data_export.exportSchema(self.allocator, &self.schema) catch |err| {
+            output.* = .{};
+            self.last_error = "failed to export stream schema";
+            return errorCode(err);
+        };
+        self.last_error = null;
+        return 0;
+    }
+
+    fn getNext(base: *ArrowArrayStream, output: *c.ArrowArray) callconv(.c) c_int {
+        const self = exportedState(base);
+        output.* = .{};
+        if (self.next_index == self.batches.len) {
+            self.last_error = null;
+            return 0;
+        }
+        var exported = data_export.exportRecordBatch(&self.batches[self.next_index]) catch |err| {
+            self.last_error = "failed to export stream batch";
+            return errorCode(err);
+        };
+        c.releaseSchema(&exported.schema);
+        output.* = exported.array;
+        exported.array.release = null;
+        self.next_index += 1;
+        self.last_error = null;
+        return 0;
+    }
+
+    fn getLastError(base: *ArrowArrayStream) callconv(.c) ?[*:0]const u8 {
+        return if (exportedState(base).last_error) |message| message.ptr else null;
+    }
+
+    fn release(base: *ArrowArrayStream) callconv(.c) void {
+        const self = exportedState(base);
+        const allocator = self.allocator;
+        for (self.batches[self.next_index..]) |*batch| batch.deinit();
+        allocator.free(self.batches);
+        self.schema.deinit();
+        base.* = .{};
+        allocator.destroy(self);
+    }
+};
+
+fn exportedState(base: *ArrowArrayStream) *ExportedStreamState {
+    return @ptrCast(@alignCast(base.private_data.?));
+}
+
+fn errorCode(err: anyerror) c_int {
+    return @intCast(@intFromEnum(if (err == error.OutOfMemory) std.posix.E.NOMEM else std.posix.E.INVAL));
+}
+
+/// Moves a native schema and homogeneous owning batches into a C Stream.
+/// Failure preserves every input. Success invalidates each moved value while the
+/// caller retains ownership of the outer `input_batches` slice allocation.
+pub fn exportRecordBatchStream(
+    allocator: std.mem.Allocator,
+    schema: *schema_mod.Schema,
+    input_batches: []owned_batch.OwnedRecordBatch,
+) !ArrowArrayStream {
+    for (input_batches) |*batch| if (!schema.eql(&batch.schema)) return error.SchemaMismatch;
+    var preflight_schema = try data_export.exportSchema(allocator, schema);
+    c.releaseSchema(&preflight_schema);
+    const state = try allocator.create(ExportedStreamState);
+    errdefer allocator.destroy(state);
+    const batches = try allocator.alloc(owned_batch.OwnedRecordBatch, input_batches.len);
+
+    // All fallible work is complete before ownership starts moving.
+    state.* = .{ .allocator = allocator, .schema = schema.*, .batches = batches };
+    schema.* = undefined;
+    for (input_batches, batches) |*source, *destination| {
+        destination.* = source.*;
+        source.* = undefined;
+    }
+    return .{
+        .get_schema = ExportedStreamState.getSchema,
+        .get_next = ExportedStreamState.getNext,
+        .get_last_error = ExportedStreamState.getLastError,
+        .release = ExportedStreamState.release,
+        .private_data = state,
+    };
+}
 
 fn isStructSchema(schema: *const c.ArrowSchema) bool {
     const format = schema.format orelse return false;
@@ -445,4 +540,124 @@ test "stream take rejects released and incomplete callback tables without move" 
     var incomplete: ArrowArrayStream = .{ .release = testStreamRelease };
     try std.testing.expectError(error.MissingCallback, ImportedStream.take(&incomplete));
     try std.testing.expect(incomplete.release != null);
+}
+
+fn makeProducerBatch(allocator: std.mem.Allocator, value: i32) !owned_batch.OwnedRecordBatch {
+    var schema = try schema_mod.Schema.init(allocator, &.{.{ .name = "value", .data_type = .int32, .nullable = false }}, &.{.{ .key = "source", .value = "zig-stream" }});
+    errdefer schema.deinit();
+    var builder = primitive.PrimitiveBuilder(i32).init(allocator);
+    defer builder.deinit();
+    try builder.append(value);
+    var array = builder.finish();
+    defer array.deinit();
+    var columns = [_]owned_batch.OwnedArray{owned_batch.OwnedArray.takePrimitive(i32, &array)};
+    var columns_live = true;
+    errdefer if (columns_live) columns[0].deinit();
+    const batch = try owned_batch.OwnedRecordBatch.take(allocator, &schema, &columns, 1);
+    columns_live = false;
+    return batch;
+}
+
+test "record-batch stream producer rejects mismatched schemas before move" {
+    var schema = try schema_mod.Schema.init(std.testing.allocator, &.{.{ .name = "value", .data_type = .int32, .nullable = false }}, &.{.{ .key = "source", .value = "different" }});
+    defer schema.deinit();
+    var batches = [_]owned_batch.OwnedRecordBatch{try makeProducerBatch(std.testing.allocator, 1)};
+    defer batches[0].deinit();
+    try std.testing.expectError(error.SchemaMismatch, exportRecordBatchStream(std.testing.allocator, &schema, &batches));
+    try std.testing.expectEqual(@as(usize, 1), batches[0].row_count);
+    try std.testing.expectEqualStrings("value", schema.fields[0].name);
+}
+
+fn producerAllocationScenario(allocator: std.mem.Allocator) !void {
+    var schema = try schema_mod.Schema.init(allocator, &.{.{ .name = "value", .data_type = .int32, .nullable = false }}, &.{.{ .key = "source", .value = "zig-stream" }});
+    var schema_live = true;
+    defer if (schema_live) schema.deinit();
+    var batches: [2]owned_batch.OwnedRecordBatch = undefined;
+    var initialized: usize = 0;
+    defer for (batches[0..initialized]) |*batch| batch.deinit();
+    batches[0] = try makeProducerBatch(allocator, 10);
+    initialized = 1;
+    batches[1] = try makeProducerBatch(allocator, 20);
+    initialized = 2;
+    var stream = exportRecordBatchStream(allocator, &schema, &batches) catch |err| {
+        try std.testing.expectEqualStrings("value", schema.fields[0].name);
+        try std.testing.expectEqual(@as(usize, 1), batches[0].row_count);
+        return err;
+    };
+    schema_live = false;
+    initialized = 0;
+    stream.release.?(&stream);
+}
+
+test "record-batch stream construction rolls back every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, producerAllocationScenario, .{});
+}
+
+test "record-batch stream supports empty streams and zero-column batches" {
+    var empty_schema = try schema_mod.Schema.init(std.testing.allocator, &.{}, &.{});
+    var empty_stream = try exportRecordBatchStream(std.testing.allocator, &empty_schema, &.{});
+    var empty_output: c.ArrowArray = .{};
+    try std.testing.expectEqual(@as(c_int, 0), empty_stream.get_next.?(&empty_stream, &empty_output));
+    try std.testing.expect(empty_output.release == null);
+    empty_stream.release.?(&empty_stream);
+
+    var stream_schema = try schema_mod.Schema.init(std.testing.allocator, &.{}, &.{});
+    var batch_schema = try schema_mod.Schema.init(std.testing.allocator, &.{}, &.{});
+    var zero_columns: [0]owned_batch.OwnedArray = .{};
+    var batches = [_]owned_batch.OwnedRecordBatch{try owned_batch.OwnedRecordBatch.take(std.testing.allocator, &batch_schema, &zero_columns, 7)};
+    var stream = try exportRecordBatchStream(std.testing.allocator, &stream_schema, &batches);
+    var output: c.ArrowArray = .{};
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_next.?(&stream, &output));
+    try std.testing.expectEqual(@as(i64, 7), output.length);
+    try std.testing.expectEqual(@as(i64, 0), output.n_children);
+    c.releaseArray(&output);
+    stream.release.?(&stream);
+}
+
+test "record-batch stream producer retries callback failures and releases exactly" {
+    var failing = std.testing.FailingAllocator.init(std.testing.allocator, .{});
+    const allocator = failing.allocator();
+    var schema = try schema_mod.Schema.init(allocator, &.{.{ .name = "value", .data_type = .int32, .nullable = false }}, &.{.{ .key = "source", .value = "zig-stream" }});
+    var batches = [_]owned_batch.OwnedRecordBatch{
+        try makeProducerBatch(allocator, 10),
+        try makeProducerBatch(allocator, 20),
+    };
+    var stream = try exportRecordBatchStream(allocator, &schema, &batches);
+
+    failing.fail_index = failing.alloc_index;
+    var exported_schema: c.ArrowSchema = .{};
+    try std.testing.expectEqual(@as(c_int, @intCast(@intFromEnum(std.posix.E.NOMEM))), stream.get_schema.?(&stream, &exported_schema));
+    try std.testing.expect(exported_schema.release == null);
+    try std.testing.expectEqualStrings("failed to export stream schema", std.mem.span(stream.get_last_error.?(&stream).?));
+    failing.fail_index = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_schema.?(&stream, &exported_schema));
+    try std.testing.expect(stream.get_last_error.?(&stream) == null);
+    var repeated_schema: c.ArrowSchema = .{};
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_schema.?(&stream, &repeated_schema));
+    c.releaseSchema(&exported_schema);
+
+    failing.fail_index = failing.alloc_index;
+    var first: c.ArrowArray = .{};
+    try std.testing.expectEqual(@as(c_int, @intCast(@intFromEnum(std.posix.E.NOMEM))), stream.get_next.?(&stream, &first));
+    try std.testing.expect(first.release == null);
+    try std.testing.expectEqualStrings("failed to export stream batch", std.mem.span(stream.get_last_error.?(&stream).?));
+    failing.fail_index = std.math.maxInt(usize);
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_next.?(&stream, &first));
+    const first_values: [*]const i32 = @ptrCast(@alignCast(first.children.?[0].?.buffers.?[1].?));
+    try std.testing.expectEqual(@as(i32, 10), first_values[0]);
+
+    var second: c.ArrowArray = .{};
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_next.?(&stream, &second));
+    var eos: c.ArrowArray = .{};
+    try std.testing.expectEqual(@as(c_int, 0), stream.get_next.?(&stream, &eos));
+    try std.testing.expect(eos.release == null);
+    stream.release.?(&stream);
+    try std.testing.expect(stream.release == null);
+    try std.testing.expectEqualStrings("value", std.mem.span(repeated_schema.children.?[0].?.name.?));
+    try std.testing.expectEqual(@as(i32, 10), first_values[0]);
+    const second_values: [*]const i32 = @ptrCast(@alignCast(second.children.?[0].?.buffers.?[1].?));
+    try std.testing.expectEqual(@as(i32, 20), second_values[0]);
+    c.releaseArray(&first);
+    c.releaseArray(&second);
+    c.releaseSchema(&repeated_schema);
 }

@@ -47,6 +47,8 @@ lib.arrowz_take_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArrayStream)]
 lib.arrowz_record_batch_stream_fixture.argtypes = [ct.POINTER(ArrowArrayStream), ct.c_size_t, ct.c_size_t]
 lib.arrowz_record_batch_stream_fixture.restype = ct.c_int
+lib.arrowz_record_batch_stream_export_fixture.argtypes = [ct.POINTER(ArrowArrayStream), ct.POINTER(ct.c_size_t), ct.POINTER(ct.c_size_t)]
+lib.arrowz_record_batch_stream_export_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.restype = ct.c_int
 lib.arrowz_recursive_import_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_recursive_import_fixture.restype = ct.c_int
@@ -84,6 +86,30 @@ try:
 finally:
     release(raw)
     release(schema)
+cases += 1
+
+# Zig produces the standard stream; PyArrow consumes the schema and recursive
+# batches and must retain the native zero-copy value buffers.
+produced_stream = ArrowArrayStream()
+first_address, second_address = ct.c_size_t(), ct.c_size_t()
+assert lib.arrowz_record_batch_stream_export_fixture(
+    ct.byref(produced_stream), ct.byref(first_address), ct.byref(second_address)
+) == 0
+reader = pa.RecordBatchReader._import_from_c(ct.addressof(produced_stream))
+assert not produced_stream.release
+assert reader.schema == pa.schema([
+    pa.field("id", pa.int32(), nullable=False),
+    pa.field("payload", pa.struct([pa.field("score", pa.int32(), nullable=False)])),
+], metadata={b"source": b"arrowz-stream"})
+produced_batches = list(reader)
+assert [batch.to_pydict() for batch in produced_batches] == [
+    {"id": [11], "payload": [{"score": 110}]},
+    {"id": [12], "payload": [{"score": 120}]},
+]
+assert produced_batches[0].column(0).buffers()[1].address == first_address.value
+assert produced_batches[1].column(0).buffers()[1].address == second_address.value
+for batch in produced_batches:
+    batch.validate(full=True)
 cases += 1
 
 inner = pa.StructArray.from_arrays(
