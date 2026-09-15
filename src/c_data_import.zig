@@ -9,7 +9,14 @@ const primitive = @import("primitive.zig");
 const boolean = @import("boolean.zig");
 const variable = @import("variable_binary.zig");
 const record_batch = @import("record_batch.zig");
+const schema_mod = @import("schema.zig");
 const c = @import("c_data.zig");
+
+const max_schema_depth: usize = 64;
+const max_children: usize = 65_536;
+const max_metadata_entries: usize = 1_024;
+const max_metadata_bytes: usize = 16 * 1024 * 1024;
+const max_name_bytes: usize = 1024 * 1024;
 
 pub const ImportError = error{
     Released,
@@ -32,7 +39,201 @@ pub const ImportError = error{
     MissingChildren,
     MissingChild,
     ChildTooShort,
+    InvalidFlags,
+    InvalidMetadata,
+    MetadataLimitExceeded,
+    NameLimitExceeded,
+    SchemaDepthExceeded,
+    ChildLimitExceeded,
+    InvalidBatchValidity,
 };
+
+/// Singular owner of a deep-copied native schema and zero-copy batch columns.
+/// Do not copy. Moving invalidates every outstanding borrowed RecordBatch.
+pub const ImportedRecordBatch = struct {
+    allocator: std.mem.Allocator,
+    array: c.ArrowArray = .{},
+    c_schema: c.ArrowSchema = .{},
+    view: ?record_batch.ArrayView = null,
+    native_schema: ?schema_mod.Schema = null,
+    columns: []record_batch.ArrayView = &.{},
+
+    /// Completes recursive validation and every allocation before moving roots.
+    pub fn take(allocator: std.mem.Allocator, array: *c.ArrowArray, schema: *c.ArrowSchema) !ImportedRecordBatch {
+        const view = try buildStruct(allocator, array, schema);
+        errdefer freeView(allocator, view);
+        const root = view.struct_;
+        if (root.null_count != 0) return error.InvalidBatchValidity;
+        if (schema.flags != 0) return error.InvalidFlags;
+
+        const specs = try buildFieldSpecs(allocator, schema, 0);
+        defer freeFieldSpecs(allocator, specs);
+        const metadata = try parseMetadata(allocator, schema.metadata);
+        defer freeMetadataSpecs(allocator, metadata);
+        var native_schema = try schema_mod.Schema.init(allocator, specs, metadata);
+        errdefer native_schema.deinit();
+
+        const columns = if (root.children.len == 0)
+            @as([]record_batch.ArrayView, &.{})
+        else
+            try allocator.alloc(record_batch.ArrayView, root.children.len);
+        errdefer if (columns.len != 0) allocator.free(columns);
+        for (columns, 0..) |*column, index| column.* = try root.child(index);
+        _ = try record_batch.RecordBatch.init(&native_schema, columns, root.len);
+
+        const result: ImportedRecordBatch = .{
+            .allocator = allocator,
+            .array = array.*,
+            .c_schema = schema.*,
+            .view = view,
+            .native_schema = native_schema,
+            .columns = columns,
+        };
+        array.* = .{};
+        schema.* = .{};
+        return result;
+    }
+
+    pub fn borrow(self: *const ImportedRecordBatch) !record_batch.RecordBatch {
+        if (self.array.release == null or self.c_schema.release == null or self.native_schema == null or self.view == null) return error.Released;
+        return record_batch.RecordBatch.init(&self.native_schema.?, self.columns, self.view.?.struct_.len);
+    }
+
+    pub fn move(self: *ImportedRecordBatch) ImportedRecordBatch {
+        const result = self.*;
+        self.* = .{ .allocator = self.allocator };
+        return result;
+    }
+
+    pub fn deinit(self: *ImportedRecordBatch) void {
+        c.releaseArray(&self.array);
+        c.releaseSchema(&self.c_schema);
+        if (self.view) |view| freeView(self.allocator, view);
+        if (self.native_schema) |*schema| schema.deinit();
+        if (self.columns.len != 0) self.allocator.free(self.columns);
+        self.* = .{ .allocator = self.allocator };
+    }
+};
+
+fn buildFieldSpecs(allocator: std.mem.Allocator, parent: *const c.ArrowSchema, depth: usize) anyerror![]schema_mod.FieldSpec {
+    if (depth >= max_schema_depth) return error.SchemaDepthExceeded;
+    if (parent.n_children < 0) return error.InvalidChildCount;
+    const count = std.math.cast(usize, parent.n_children) orelse return error.LengthOverflow;
+    if (count > max_children) return error.ChildLimitExceeded;
+    if (count == 0) return &.{};
+    const children = parent.children orelse return error.MissingChildren;
+    const specs = try allocator.alloc(schema_mod.FieldSpec, count);
+    var initialized: usize = 0;
+    errdefer {
+        for (specs[0..initialized]) |spec| freeFieldSpec(allocator, spec);
+        allocator.free(specs);
+    }
+    for (specs, 0..) |*spec, index| {
+        const child = children[index] orelse return error.MissingChild;
+        spec.* = try buildFieldSpec(allocator, child, depth + 1);
+        initialized += 1;
+    }
+    return specs;
+}
+
+fn buildFieldSpec(allocator: std.mem.Allocator, schema: *const c.ArrowSchema, depth: usize) anyerror!schema_mod.FieldSpec {
+    if (schema.release == null) return error.Released;
+    if (schema.dictionary != null) return error.DictionaryUnsupported;
+    if (schema.flags & ~@as(i64, 2) != 0) return error.InvalidFlags;
+    const format = try boundedZ(schema.format orelse return error.MissingFormat, 16, error.UnsupportedType);
+    const data_type: schema_mod.DataType = if (std.mem.eql(u8, format, "+s")) .struct_ else if (format.len == 1) switch (format[0]) {
+        'c' => .int8,
+        'C' => .uint8,
+        's' => .int16,
+        'S' => .uint16,
+        'i' => .int32,
+        'I' => .uint32,
+        'l' => .int64,
+        'L' => .uint64,
+        'f' => .float32,
+        'g' => .float64,
+        'b' => .boolean,
+        'z' => .binary,
+        'u' => .utf8,
+        else => return error.UnsupportedType,
+    } else return error.UnsupportedType;
+    if (data_type != .struct_ and schema.n_children != 0) return error.InvalidChildCount;
+    const name = try boundedOptionalName(schema.name);
+    const metadata = try parseMetadata(allocator, schema.metadata);
+    errdefer freeMetadataSpecs(allocator, metadata);
+    const children = if (data_type == .struct_) try buildFieldSpecs(allocator, schema, depth) else @as([]schema_mod.FieldSpec, &.{});
+    return .{
+        .name = name,
+        .data_type = data_type,
+        .nullable = schema.flags & 2 != 0,
+        .metadata = metadata,
+        .children = children,
+    };
+}
+
+fn freeFieldSpecs(allocator: std.mem.Allocator, specs: []const schema_mod.FieldSpec) void {
+    for (specs) |spec| freeFieldSpec(allocator, spec);
+    if (specs.len != 0) allocator.free(@constCast(specs));
+}
+
+fn freeFieldSpec(allocator: std.mem.Allocator, spec: schema_mod.FieldSpec) void {
+    freeMetadataSpecs(allocator, spec.metadata);
+    freeFieldSpecs(allocator, spec.children);
+}
+
+fn parseMetadata(allocator: std.mem.Allocator, pointer: ?[*]const u8) ![]schema_mod.MetadataEntry {
+    const source = pointer orelse return &.{};
+    const bytes = source[0..max_metadata_bytes];
+    var cursor: usize = 0;
+    const signed_count = try readMetadataI32(bytes, &cursor);
+    if (signed_count < 0) return error.InvalidMetadata;
+    const count: usize = @intCast(signed_count);
+    if (count > max_metadata_entries) return error.MetadataLimitExceeded;
+    if (count == 0) return &.{};
+    const entries = try allocator.alloc(schema_mod.MetadataEntry, count);
+    errdefer allocator.free(entries);
+    for (entries) |*entry| {
+        const key_len = try readMetadataLength(bytes, &cursor);
+        const key_end = std.math.add(usize, cursor, key_len) catch return error.InvalidMetadata;
+        if (key_end > bytes.len) return error.MetadataLimitExceeded;
+        const key = bytes[cursor..key_end];
+        cursor = key_end;
+        const value_len = try readMetadataLength(bytes, &cursor);
+        const value_end = std.math.add(usize, cursor, value_len) catch return error.InvalidMetadata;
+        if (value_end > bytes.len) return error.MetadataLimitExceeded;
+        entry.* = .{ .key = key, .value = bytes[cursor..value_end] };
+        cursor = value_end;
+    }
+    return entries;
+}
+
+fn readMetadataLength(bytes: []const u8, cursor: *usize) !usize {
+    const value = try readMetadataI32(bytes, cursor);
+    if (value < 0) return error.InvalidMetadata;
+    return @intCast(value);
+}
+
+fn readMetadataI32(bytes: []const u8, cursor: *usize) !i32 {
+    const end = std.math.add(usize, cursor.*, @sizeOf(i32)) catch return error.InvalidMetadata;
+    if (end > bytes.len) return error.MetadataLimitExceeded;
+    var value: i32 = undefined;
+    @memcpy(std.mem.asBytes(&value), bytes[cursor.*..end]);
+    cursor.* = end;
+    return value;
+}
+
+fn freeMetadataSpecs(allocator: std.mem.Allocator, entries: []const schema_mod.MetadataEntry) void {
+    if (entries.len != 0) allocator.free(@constCast(entries));
+}
+
+fn boundedOptionalName(pointer: ?[*:0]const u8) ![]const u8 {
+    return if (pointer) |name| boundedZ(name, max_name_bytes, error.NameLimitExceeded) else "";
+}
+
+fn boundedZ(pointer: [*:0]const u8, limit: usize, comptime too_long: anyerror) ![]const u8 {
+    for (0..limit) |index| if (pointer[index] == 0) return pointer[0..index];
+    return too_long;
+}
 
 /// Singular owner of recursive C Data struct bases and Zig view descriptors.
 /// Buffer bytes remain producer-owned; do not copy this value. Use `move`.
@@ -86,6 +287,11 @@ fn freeView(allocator: std.mem.Allocator, view: record_batch.ArrayView) void {
 }
 
 fn buildStruct(allocator: std.mem.Allocator, array: *const c.ArrowArray, schema: *const c.ArrowSchema) !record_batch.ArrayView {
+    return buildStructDepth(allocator, array, schema, 0);
+}
+
+fn buildStructDepth(allocator: std.mem.Allocator, array: *const c.ArrowArray, schema: *const c.ArrowSchema, depth: usize) !record_batch.ArrayView {
+    if (depth >= max_schema_depth) return error.SchemaDepthExceeded;
     if (array.release == null or schema.release == null) return error.Released;
     if (array.dictionary != null or schema.dictionary != null) return error.DictionaryUnsupported;
     const format = schema.format orelse return error.MissingFormat;
@@ -111,6 +317,7 @@ fn buildStruct(allocator: std.mem.Allocator, array: *const c.ArrowArray, schema:
     }
     if (array.null_count >= 0 and null_count != @as(usize, @intCast(array.null_count))) return error.InvalidNullCount;
     const count = std.math.cast(usize, array.n_children) orelse return error.LengthOverflow;
+    if (count > max_children) return error.ChildLimitExceeded;
     if (count == 0) return .{ .struct_ = .{ .validity = validity, .children = &.{}, .offset = offset, .len = len, .null_count = null_count } };
     const array_children = array.children orelse return error.MissingChildren;
     const schema_children = schema.children orelse return error.MissingChildren;
@@ -125,7 +332,7 @@ fn buildStruct(allocator: std.mem.Allocator, array: *const c.ArrowArray, schema:
         const child_schema = schema_children[i] orelse return error.MissingChild;
         const child_format = child_schema.format orelse return error.MissingFormat;
         child.* = if (child_format[0] == '+')
-            try buildStruct(allocator, child_array, child_schema)
+            try buildStructDepth(allocator, child_array, child_schema, depth + 1)
         else
             try borrowArray(child_array, child_schema);
         initialized += 1;
@@ -580,4 +787,114 @@ test "recursive struct validates descendant layouts without moving either base" 
     defer empty.deinit();
     try std.testing.expectEqual(@as(usize, 3), (try empty.borrow()).struct_.len);
     try std.testing.expectEqual(@as(usize, 0), (try empty.borrow()).struct_.children.len);
+}
+
+fn writeTestMetadata(bytes: []u8, key: []const u8, value: []const u8) void {
+    var cursor: usize = 0;
+    const one: i32 = 1;
+    const key_len: i32 = @intCast(key.len);
+    const value_len: i32 = @intCast(value.len);
+    inline for (.{ std.mem.asBytes(&one), std.mem.asBytes(&key_len), key, std.mem.asBytes(&value_len), value }) |part| {
+        @memcpy(bytes[cursor .. cursor + part.len], part);
+        cursor += part.len;
+    }
+}
+
+fn batchImportScenario(allocator: std.mem.Allocator) !void {
+    const values = [_]i32{ 10, 11, 12 };
+    var leaf_buffers = [_]?*const anyopaque{ null, @ptrCast(&values) };
+    var root_buffers = [_]?*const anyopaque{null};
+    var child: c.ArrowArray = .{ .length = 3, .n_buffers = 2, .buffers = &leaf_buffers, .release = noOpArrayRelease };
+    var array_children = [_]?*c.ArrowArray{&child};
+    var counts: ReleaseCounts = .{};
+    var array: c.ArrowArray = .{ .length = 2, .offset = 1, .n_buffers = 1, .n_children = 1, .buffers = &root_buffers, .children = &array_children, .release = countArrayRelease, .private_data = &counts };
+
+    var field_metadata: [4 + 4 + 4 + 4 + 3]u8 = undefined;
+    writeTestMetadata(&field_metadata, &.{ 0, 'k', 0, 'y' }, &.{ 'v', 0, 0xff });
+    var schema_metadata: [4 + 4 + 6 + 4 + 6]u8 = undefined;
+    writeTestMetadata(&schema_metadata, "source", "native");
+    var name: [6:0]u8 = "数据".*;
+    var child_schema: c.ArrowSchema = .{ .format = "i", .name = &name, .metadata = &field_metadata, .flags = 0, .release = noOpSchemaRelease };
+    var schema_children = [_]?*c.ArrowSchema{&child_schema};
+    var schema: c.ArrowSchema = .{ .format = "+s", .metadata = &schema_metadata, .n_children = 1, .children = &schema_children, .release = countSchemaRelease, .private_data = &counts };
+
+    var owner = ImportedRecordBatch.take(allocator, &array, &schema) catch |err| {
+        try std.testing.expect(array.release != null and schema.release != null);
+        try std.testing.expectEqual(@as(usize, 0), counts.arrays);
+        try std.testing.expectEqual(@as(usize, 0), counts.schemas);
+        c.releaseArray(&array);
+        c.releaseSchema(&schema);
+        return err;
+    };
+    name[0] = 'x';
+    field_metadata[12] = 'x';
+    schema_metadata[14] = 'x';
+    const batch = try owner.borrow();
+    try std.testing.expectEqual(@as(usize, 2), batch.row_count);
+    try std.testing.expectEqualStrings("数据", batch.schema.fields[0].name);
+    try std.testing.expectEqualSlices(u8, &.{ 0, 'k', 0, 'y' }, batch.schema.fields[0].metadata[0].key);
+    try std.testing.expectEqualSlices(u8, &.{ 'v', 0, 0xff }, batch.schema.fields[0].metadata[0].value);
+    try std.testing.expectEqualStrings("source", batch.schema.metadata[0].key);
+    try std.testing.expectEqualStrings("native", batch.schema.metadata[0].value);
+    const ints = (try batch.column(0)).int32;
+    try std.testing.expectEqual(@as(?i32, 11), try ints.get(0));
+    try std.testing.expectEqual(@intFromPtr(&values), @intFromPtr(ints.values.ptr));
+
+    var moved = owner.move();
+    try std.testing.expectError(error.Released, owner.borrow());
+    owner.deinit();
+    moved.deinit();
+    moved.deinit();
+    try std.testing.expectEqual(@as(usize, 1), counts.arrays);
+    try std.testing.expectEqual(@as(usize, 1), counts.schemas);
+}
+
+test "record batch schema import deep copies metadata and rolls back every allocation failure" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, batchImportScenario, .{});
+}
+
+test "record batch schema import rejects lost row validity, flags and malformed metadata before move" {
+    var root_buffers = [_]?*const anyopaque{null};
+    var array: c.ArrowArray = .{ .length = 1, .null_count = 1, .n_buffers = 1, .buffers = &root_buffers, .release = noOpArrayRelease };
+    var schema: c.ArrowSchema = .{ .format = "+s", .release = noOpSchemaRelease };
+    try std.testing.expectError(error.MissingValidity, ImportedRecordBatch.take(std.testing.allocator, &array, &schema));
+    const invalid = [_]u8{0};
+    root_buffers[0] = @ptrCast(&invalid);
+    try std.testing.expectError(error.InvalidBatchValidity, ImportedRecordBatch.take(std.testing.allocator, &array, &schema));
+    array.null_count = 0;
+    root_buffers[0] = null;
+    schema.flags = 2;
+    try std.testing.expectError(error.InvalidFlags, ImportedRecordBatch.take(std.testing.allocator, &array, &schema));
+    schema.flags = 0;
+    var negative_count: i32 = -1;
+    schema.metadata = std.mem.asBytes(&negative_count).ptr;
+    try std.testing.expectError(error.InvalidMetadata, ImportedRecordBatch.take(std.testing.allocator, &array, &schema));
+    try std.testing.expect(array.release != null and schema.release != null);
+}
+
+test "record batch schema import preserves zero columns and duplicate field order" {
+    var root_buffers = [_]?*const anyopaque{null};
+    var empty_array: c.ArrowArray = .{ .length = 5, .n_buffers = 1, .buffers = &root_buffers, .release = noOpArrayRelease };
+    var empty_schema: c.ArrowSchema = .{ .format = "+s", .release = noOpSchemaRelease };
+    var empty = try ImportedRecordBatch.take(std.testing.allocator, &empty_array, &empty_schema);
+    defer empty.deinit();
+    const empty_batch = try empty.borrow();
+    try std.testing.expectEqual(@as(usize, 5), empty_batch.row_count);
+    try std.testing.expectEqual(@as(usize, 0), empty_batch.schema.fields.len);
+
+    const values = [_]i8{ 1, 2 };
+    var child_buffers = [_]?*const anyopaque{ null, @ptrCast(&values) };
+    var child: c.ArrowArray = .{ .length = 2, .n_buffers = 2, .buffers = &child_buffers, .release = noOpArrayRelease };
+    var array_children = [_]?*c.ArrowArray{ &child, &child };
+    var array: c.ArrowArray = .{ .length = 2, .n_buffers = 1, .n_children = 2, .buffers = &root_buffers, .children = &array_children, .release = noOpArrayRelease };
+    var first: c.ArrowSchema = .{ .format = "c", .name = "x", .release = noOpSchemaRelease };
+    var second: c.ArrowSchema = .{ .format = "c", .name = "x", .release = noOpSchemaRelease };
+    var schema_children = [_]?*c.ArrowSchema{ &first, &second };
+    var schema: c.ArrowSchema = .{ .format = "+s", .n_children = 2, .children = &schema_children, .release = noOpSchemaRelease };
+    var duplicate = try ImportedRecordBatch.take(std.testing.allocator, &array, &schema);
+    defer duplicate.deinit();
+    const batch = try duplicate.borrow();
+    try std.testing.expectEqual(@as(usize, 2), batch.schema.fields.len);
+    try std.testing.expectEqual(@as(?usize, 0), batch.schema.fieldIndex("x"));
+    try std.testing.expectEqual(@as(?i8, 2), try (try batch.column(1)).int8.get(1));
 }

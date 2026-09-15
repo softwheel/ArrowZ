@@ -4,6 +4,35 @@ const z = @import("arrowz");
 const c = z.c_data;
 const cs = z.c_stream;
 
+export fn arrowz_record_batch_import_fixture(array: *c.ArrowArray, schema: *c.ArrowSchema) c_int {
+    if (array.children == null or array.n_children != 2) return 1;
+    const id_address = array.children.?[0].?.buffers.?[1] orelse return 2;
+    var owner = z.ImportedRecordBatch.take(std.heap.page_allocator, array, schema) catch return 3;
+    defer owner.deinit();
+    if (array.release != null or schema.release != null) return 4;
+    const batch = owner.borrow() catch return 5;
+    if (batch.row_count != 2 or batch.schema.fields.len != 2) return 6;
+    const id_field = batch.schema.fields[0];
+    if (!std.mem.eql(u8, id_field.name, "id") or id_field.nullable) return 7;
+    if (id_field.metadata.len != 1 or !std.mem.eql(u8, id_field.metadata[0].key, &.{ 'k', 0 }) or !std.mem.eql(u8, id_field.metadata[0].value, &.{ 'v', 0, 0xff })) return 8;
+    if (batch.schema.metadata.len != 1 or !std.mem.eql(u8, batch.schema.metadata[0].key, "source") or !std.mem.eql(u8, batch.schema.metadata[0].value, "pyarrow")) return 9;
+    const ids = (batch.column(0) catch return 10).int32;
+    if ((ids.get(0) catch return 11) != 8 or (ids.get(1) catch return 12) != 9) return 13;
+    if (@intFromPtr(ids.values.ptr) != @intFromPtr(id_address)) return 14;
+    const payload_field = batch.schema.fields[1];
+    if (!std.mem.eql(u8, payload_field.name, "payload") or payload_field.children.len != 1) return 15;
+    if (!std.mem.eql(u8, payload_field.children[0].name, "score") or payload_field.children[0].nullable) return 16;
+    const payload = (batch.column(1) catch return 17).struct_;
+    const scores = (payload.child(0) catch return 18).int32;
+    if ((scores.get(0) catch return 19) != 80 or (scores.get(1) catch return 20) != 90) return 21;
+    var moved = owner.move();
+    if (owner.borrow()) |_| return 22 else |err| if (err != error.Released) return 22;
+    owner.deinit();
+    moved.deinit();
+    moved.deinit();
+    return 0;
+}
+
 export fn arrowz_recursive_import_fixture(scenario: u32, array: *c.ArrowArray, schema: *c.ArrowSchema) c_int {
     var owner = z.ImportedStruct.take(std.heap.page_allocator, array, schema) catch return 1;
     defer owner.deinit();

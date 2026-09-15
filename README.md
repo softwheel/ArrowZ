@@ -109,8 +109,17 @@ allocates only Zig view descriptors before moving either root; errors leave both
 roots with the producer. `borrow` returns a recursive native `ArrayView`, `move`
 relocates ownership, and `deinit` releases the producer roots once. Never copy the
 owner or outlive it with a borrowed view. Children must cover the parent's logical
-slice. This does not yet reconstruct an owning native `Schema` or directly read
-record batches from `ImportedStream`.
+slice.
+
+`arrowz.ImportedRecordBatch.take(allocator, &c_array, &c_schema)` interprets a
+`+s` root as a record batch, deep-copies its recursive names, nullable flags and
+binary metadata into a native `Schema`, and keeps column buffers zero-copy.
+Validation and every allocation finish before either root moves. The owner has
+explicit `borrow`, `move` and idempotent `deinit`; moving invalidates outstanding
+borrowed batches. Root row nulls are rejected because native `RecordBatch` has no
+row-validity bitmap. C metadata and buffer extents still require trusted producer
+memory because the ABI carries no byte lengths. Direct record-batch reads from
+`ImportedStream` remain a later slice.
 
 `arrowz.ImportedStream.take(&c_stream)` moves a validated C Stream callback table.
 Call `readSchema` once, then `next` until it returns `null`. Each live result is an
