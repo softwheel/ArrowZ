@@ -37,5 +37,7 @@ Recursive struct C Data import is governed by
 specs/0012-recursive-c-data-import/spec.md, verified in PR #13.
 Native record-batch schema reconstruction is scoped by
 specs/0013-c-data-record-batch-schema/spec.md.
+Recursive C Stream record-batch consumption is scoped by
+specs/0014-c-stream-record-batch-consumer/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
