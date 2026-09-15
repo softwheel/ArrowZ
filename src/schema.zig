@@ -86,7 +86,28 @@ pub const Schema = struct {
         }
         return null;
     }
+
+    pub fn eql(self: *const Schema, other: *const Schema) bool {
+        return fieldsEqual(self.fields, other.fields) and metadataEqual(self.metadata, other.metadata);
+    }
 };
+
+fn fieldsEqual(left: []const Field, right: []const Field) bool {
+    if (left.len != right.len) return false;
+    for (left, right) |a, b| {
+        if (!std.mem.eql(u8, a.name, b.name) or a.data_type != b.data_type or a.nullable != b.nullable) return false;
+        if (!metadataEqual(a.metadata, b.metadata) or !fieldsEqual(a.children, b.children)) return false;
+    }
+    return true;
+}
+
+fn metadataEqual(left: []const Metadata, right: []const Metadata) bool {
+    if (left.len != right.len) return false;
+    for (left, right) |a, b| {
+        if (!std.mem.eql(u8, a.key, b.key) or !std.mem.eql(u8, a.value, b.value)) return false;
+    }
+    return true;
+}
 
 const CloneError = error{ OutOfMemory, InvalidUtf8Name, UnexpectedChildren };
 
@@ -194,4 +215,25 @@ test "duplicate field names preserve order and first-match lookup" {
     defer schema.deinit();
     try std.testing.expectEqual(@as(?usize, 0), schema.fieldIndex("x"));
     try std.testing.expectEqual(@as(?usize, null), schema.fieldIndex("missing"));
+}
+
+test "schema equality is recursive and metadata-order sensitive" {
+    const fields = [_]FieldSpec{.{
+        .name = "point",
+        .data_type = .struct_,
+        .nullable = false,
+        .metadata = &.{.{ .key = "role", .value = "position" }},
+        .children = &.{.{ .name = "x", .data_type = .float64 }},
+    }};
+    var first = try Schema.init(std.testing.allocator, &fields, &.{.{ .key = "a", .value = "1" }});
+    defer first.deinit();
+    var same = try Schema.init(std.testing.allocator, &fields, &.{.{ .key = "a", .value = "1" }});
+    defer same.deinit();
+    var changed = try Schema.init(std.testing.allocator, &fields, &.{.{ .key = "a", .value = "2" }});
+    defer changed.deinit();
+    try std.testing.expect(first.eql(&same));
+    try std.testing.expect(!first.eql(&changed));
+    changed.metadata[0].value[0] = '1';
+    changed.fields[0].children[0].nullable = false;
+    try std.testing.expect(!first.eql(&changed));
 }

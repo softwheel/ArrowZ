@@ -270,20 +270,8 @@ pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
         slot.* = &child.base;
     }
 
-    const schema_state = try allocator.create(SchemaRootState);
-    schema_state.* = .{
-        .allocator = allocator,
-        .metadata = null,
-        .children = &.{},
-    };
+    const schema_state = try createSchemaState(allocator, &source.schema);
     errdefer schema_state.discard();
-    schema_state.metadata = try encodeMetadata(allocator, source.schema.metadata);
-    schema_state.children = try allocator.alloc(?*c.ArrowSchema, source.schema.fields.len);
-    @memset(schema_state.children, null);
-    for (source.schema.fields, schema_state.children) |field, *slot| {
-        const child = try SchemaNodeState.create(allocator, field);
-        slot.* = &child.base;
-    }
 
     // No fallible operations after the first ownership move.
     for (source.columns, array_state.children) |*column, child_base| {
@@ -306,14 +294,39 @@ pub fn exportRecordBatch(source: *owned.OwnedRecordBatch) !c.Export {
             .release = ArrayRootState.release,
             .private_data = array_state,
         },
-        .schema = .{
-            .format = "+s",
-            .metadata = if (schema_state.metadata) |bytes| bytes.ptr else null,
-            .n_children = child_count,
-            .children = if (schema_state.children.len == 0) null else schema_state.children.ptr,
-            .release = SchemaRootState.release,
-            .private_data = schema_state,
-        },
+        .schema = schemaBase(schema_state),
+    };
+}
+
+/// Allocates an independently releasable C Data schema without consuming the
+/// native source. The source need not outlive the returned descriptor tree.
+pub fn exportSchema(allocator: std.mem.Allocator, source: *const schema_mod.Schema) !c.ArrowSchema {
+    return schemaBase(try createSchemaState(allocator, source));
+}
+
+fn createSchemaState(allocator: std.mem.Allocator, source: *const schema_mod.Schema) !*SchemaRootState {
+    _ = std.math.cast(i64, source.fields.len) orelse return error.LengthOverflow;
+    const state = try allocator.create(SchemaRootState);
+    state.* = .{ .allocator = allocator, .metadata = null, .children = &.{} };
+    errdefer state.discard();
+    state.metadata = try encodeMetadata(allocator, source.metadata);
+    state.children = try allocator.alloc(?*c.ArrowSchema, source.fields.len);
+    @memset(state.children, null);
+    for (source.fields, state.children) |field, *slot| {
+        const child = try SchemaNodeState.create(allocator, field);
+        slot.* = &child.base;
+    }
+    return state;
+}
+
+fn schemaBase(state: *SchemaRootState) c.ArrowSchema {
+    return .{
+        .format = "+s",
+        .metadata = if (state.metadata) |bytes| bytes.ptr else null,
+        .n_children = @intCast(state.children.len),
+        .children = if (state.children.len == 0) null else state.children.ptr,
+        .release = SchemaRootState.release,
+        .private_data = state,
     };
 }
 
@@ -348,6 +361,33 @@ fn metadataEntryEnd(start: usize, key_len: usize, value_len: usize) !usize {
 fn writeNativeI32(bytes: []u8, cursor: *usize, value: i32) void {
     @memcpy(bytes[cursor.* .. cursor.* + 4], std.mem.asBytes(&value));
     cursor.* += 4;
+}
+
+fn borrowedSchemaExportScenario(allocator: std.mem.Allocator) !void {
+    var schema = try schema_mod.Schema.init(allocator, &.{.{
+        .name = "outer",
+        .data_type = .struct_,
+        .nullable = false,
+        .metadata = &.{.{ .key = "level", .value = "one" }},
+        .children = &.{.{ .name = "value", .data_type = .int32, .nullable = false }},
+    }}, &.{.{ .key = "source", .value = "zig" }});
+    var schema_live = true;
+    defer if (schema_live) schema.deinit();
+    var exported = exportSchema(allocator, &schema) catch |err| {
+        try std.testing.expectEqualStrings("outer", schema.fields[0].name);
+        return err;
+    };
+    schema.deinit();
+    schema_live = false;
+    try std.testing.expectEqualStrings("+s", std.mem.span(exported.format.?));
+    try std.testing.expectEqualStrings("outer", std.mem.span(exported.children.?[0].?.name.?));
+    try std.testing.expectEqualStrings("value", std.mem.span(exported.children.?[0].?.children.?[0].?.name.?));
+    c.releaseSchema(&exported);
+    c.releaseSchema(&exported);
+}
+
+test "borrowed native schema export is independent and allocation-failure safe" {
+    try std.testing.checkAllAllocationFailures(std.testing.allocator, borrowedSchemaExportScenario, .{});
 }
 
 fn format(data_type: schema_mod.DataType) [:0]const u8 {

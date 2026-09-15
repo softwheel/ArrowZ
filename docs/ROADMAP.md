@@ -39,5 +39,7 @@ Native record-batch schema reconstruction is scoped by
 specs/0013-c-data-record-batch-schema/spec.md.
 Recursive C Stream record-batch consumption is scoped by
 specs/0014-c-stream-record-batch-consumer/spec.md.
+Native record-batch C Stream production is scoped by
+specs/0015-c-stream-record-batch-producer/spec.md.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.

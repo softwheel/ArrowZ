@@ -113,6 +113,62 @@ export fn arrowz_record_batch_stream_fixture(stream: *cs.ArrowArrayStream, first
     return 0;
 }
 
+fn streamSchema(allocator: std.mem.Allocator) !z.Schema {
+    return z.Schema.init(allocator, &.{
+        .{ .name = "id", .data_type = .int32, .nullable = false },
+        .{ .name = "payload", .data_type = .struct_, .children = &.{.{ .name = "score", .data_type = .int32, .nullable = false }} },
+    }, &.{.{ .key = "source", .value = "arrowz-stream" }});
+}
+
+fn makeStreamBatch(allocator: std.mem.Allocator, id: i32, score: i32) !z.OwnedRecordBatch {
+    var schema = try streamSchema(allocator);
+    errdefer schema.deinit();
+    var id_builder = z.PrimitiveBuilder(i32).init(allocator);
+    defer id_builder.deinit();
+    var score_builder = z.PrimitiveBuilder(i32).init(allocator);
+    defer score_builder.deinit();
+    try id_builder.append(id);
+    try score_builder.append(score);
+    var ids = id_builder.finish();
+    defer ids.deinit();
+    var scores = score_builder.finish();
+    defer scores.deinit();
+    var payload_children = [_]z.OwnedArray{z.OwnedArray.takePrimitive(i32, &scores)};
+    var payload_children_live = true;
+    defer if (payload_children_live) payload_children[0].deinit();
+    var payload = try z.StructArray.take(allocator, &payload_children, 1, null);
+    payload_children_live = false;
+    var payload_live = true;
+    defer if (payload_live) payload.deinit();
+    var columns = [_]z.OwnedArray{ z.OwnedArray.takePrimitive(i32, &ids), .{ .struct_ = payload } };
+    payload_live = false;
+    var columns_live = true;
+    defer if (columns_live) for (&columns) |*column| column.deinit();
+    const batch = try z.OwnedRecordBatch.take(allocator, &schema, &columns, 1);
+    columns_live = false;
+    return batch;
+}
+
+export fn arrowz_record_batch_stream_export_fixture(stream: *cs.ArrowArrayStream, first_address: *usize, second_address: *usize) c_int {
+    const allocator = std.heap.page_allocator;
+    var schema = streamSchema(allocator) catch return 1;
+    var schema_live = true;
+    defer if (schema_live) schema.deinit();
+    var batches: [2]z.OwnedRecordBatch = undefined;
+    var initialized: usize = 0;
+    defer for (batches[0..initialized]) |*batch| batch.deinit();
+    batches[0] = makeStreamBatch(allocator, 11, 110) catch return 2;
+    initialized = 1;
+    batches[1] = makeStreamBatch(allocator, 12, 120) catch return 3;
+    initialized = 2;
+    first_address.* = @intFromPtr(batches[0].columns[0].int32.values.items.ptr);
+    second_address.* = @intFromPtr(batches[1].columns[0].int32.values.items.ptr);
+    stream.* = z.exportRecordBatchStream(allocator, &schema, &batches) catch return 4;
+    schema_live = false;
+    initialized = 0;
+    return 0;
+}
+
 export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) c_int {
     consume(kind, scenario, array, schema) catch return 1;
     return 0;
