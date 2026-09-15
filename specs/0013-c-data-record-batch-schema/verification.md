@@ -34,5 +34,12 @@ so arbitrary invalid pointers cannot be made safe; producer memory must be
 trusted as the interface requires. Root row validity is rejected because the
 native RecordBatch model has no row bitmap.
 
-Pending: exact published-head CI and review/protection checks. Next after this
-slice: specify and implement recursive C Stream record-batch consumption.
+Published implementation head `a5a723b74b0967a7972dc4eb603644ed3b441e70`
+passed [CI run 34965588452](https://github.com/softwheel/ArrowZ/actions/runs/34965588452)
+on 2026-09-15. Both Native Zig Debug and Native Zig ReleaseSafe completed
+successfully with the same format, 47-test, example, 214-case interoperability
+and no-runtime-dependency gates.
+
+Pending: final evidence-only head CI and repository review/protection checks.
+Next after this slice: specify and implement recursive C Stream record-batch
+consumption.

@@ -1,6 +1,6 @@
 # Spec 0013: Native record-batch schema reconstruction from C Data
 
-Status: Implemented; awaiting published-head CI.
+Status: Verified on published implementation head; final evidence-head CI pending.
 
 ## Requirements
 
@@ -62,7 +62,8 @@ is deliberately the next spec, not part of this slice.
       assert values, schema equality and zero-copy buffer addresses.
 - [x] Pinned Zig 0.16.0 Debug and ReleaseSafe test, example, format, interop and
       runtime-dependency checks locally.
-- [ ] Final proposed-head CI and repository review/protection checks.
+- [x] Published implementation-head CI gates (run 34965588452).
+- [ ] Final evidence-head CI and repository review/protection checks.
 
 Do not mark Verified or broaden `ImportedStream` until these gates pass.
 The Arrow C Data schema/metadata contract was reviewed on 2026-09-14:
