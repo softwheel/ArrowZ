@@ -37,4 +37,11 @@ remain readable after Zig releases the stream schema and stream.
 The official Arrow C Stream and C Data interface documents were rechecked on
 2026-09-15. C Data provides no physical buffer extents, so trusted producer
 pointers remain required. Supported types and resource limits remain those of
-Spec 0013. Published exact-head CI, mergeability and review checks are pending.
+Spec 0013.
+
+Published implementation/evidence head
+`bcb754ff1a8ac470f6293c7bf1681719a0e4b7fe` passed
+[CI run 35016680480](https://github.com/softwheel/ArrowZ/actions/runs/35016680480)
+on 2026-09-15. Both Native Zig Debug and Native Zig ReleaseSafe completed every
+repository gate successfully. Final evidence-head CI plus mergeability, review
+and unresolved-thread checks remain pending.

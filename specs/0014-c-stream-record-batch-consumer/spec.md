@@ -1,6 +1,6 @@
 # Spec 0014: Native C Stream record-batch consumer
 
-Status: Implemented; published exact-head gates pending.
+Status: Implemented; final evidence-head gates pending.
 
 ## Requirements
 
