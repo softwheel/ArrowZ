@@ -40,6 +40,12 @@ on 2026-09-15. Both Native Zig Debug and Native Zig ReleaseSafe completed
 successfully with the same format, 47-test, example, 214-case interoperability
 and no-runtime-dependency gates.
 
-Pending: final evidence-only head CI and repository review/protection checks.
-Next after this slice: specify and implement recursive C Stream record-batch
-consumption.
+Final evidence head `ea4ab5ffecca0cd481ec35f2d984f440fde02e90`
+passed [CI run 34965797404](https://github.com/softwheel/ArrowZ/actions/runs/34965797404):
+both Native Zig Debug and ReleaseSafe succeeded on the exact proposed commit.
+GitHub reported PR #15 mergeable with no reviews or unresolved review threads;
+the target branch had no required review protection. PR #15 was squash-merged as
+main commit `1a6459534ccf664bb277584b25f292e33177fb60` on 2026-09-15.
+
+Spec 0013 is complete. Remaining M2 work starts with a new spec for recursive
+C Stream record-batch consumption; native C Stream production remains later.
