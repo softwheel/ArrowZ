@@ -1,5 +1,6 @@
 //! Pure Zig native Arrow arrays. Optional ABI adapters are exposed as c_data.
 pub const bitmap = @import("bitmap.zig");
+pub const ipc = @import("ipc.zig");
 pub const PrimitiveArray = @import("primitive.zig").PrimitiveArray;
 pub const PrimitiveBuilder = @import("primitive.zig").PrimitiveBuilder;
 pub const PrimitiveView = @import("primitive.zig").PrimitiveView;
@@ -38,6 +39,7 @@ pub const StructView = record_batch.StructView;
 
 test {
     _ = bitmap;
+    _ = ipc;
     _ = @import("primitive.zig");
     _ = c_data;
     _ = c_data_import;

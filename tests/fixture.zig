@@ -169,6 +169,21 @@ export fn arrowz_record_batch_stream_export_fixture(stream: *cs.ArrowArrayStream
     return 0;
 }
 
+export fn arrowz_ipc_message_fixture(data: [*]const u8, length: usize, expected_header: u8, expected_body_length: usize) c_int {
+    const parsed = z.ipc.parseFrame(data[0..length], .{
+        .max_metadata_bytes = 1024 * 1024,
+        .max_body_bytes = 1024 * 1024,
+    }) catch return 1;
+    const message = switch (parsed) {
+        .message => |value| value,
+        .eos => return 2,
+    };
+    if (@intFromEnum(message.metadata_version) != @intFromEnum(z.ipc.MetadataVersion.v5)) return 3;
+    if (@intFromEnum(message.header) != expected_header) return 4;
+    if (message.body.len != expected_body_length or message.consumed != length) return 5;
+    return 0;
+}
+
 export fn arrowz_import_fixture(kind: u32, scenario: u32, array: *const c.ArrowArray, schema: *const c.ArrowSchema) c_int {
     consume(kind, scenario, array, schema) catch return 1;
     return 0;
