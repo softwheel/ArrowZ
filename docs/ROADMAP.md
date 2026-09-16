@@ -46,6 +46,8 @@ their combined acceptance and public API review passed under
 specs/0016-m2-acceptance/spec.md in PR #21. M2 is complete for its scoped Linux
 x86_64 gates. The next semantic slice is a numbered M3 native IPC/FlatBuffers
 foundation under specs/0017-ipc-message-envelope/spec.md with strict
-malformed-input and resource-bound requirements.
+malformed-input and resource-bound requirements. Spec 0017 passed in PR #23; the
+next bounded M3 slice is native FlatBuffers `Schema` header decoding with explicit
+depth, field-count and metadata-byte limits.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
