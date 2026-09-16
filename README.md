@@ -16,10 +16,11 @@ Experimental native core: nullable signed/unsigned 8/16/32/64-bit integers,
 float32/float64, bit-packed booleans, UTF-8 and binary arrays, owning schemas and
 metadata, recursively owned native struct arrays, borrowed and owning heterogeneous record batches, builders, slices and
 ownership-transferring C Data array and record-batch exports, plus borrowed C Data
-import and ownership-taking import for all implemented leaf types. This is a
-foundation, not a complete Arrow SDK. A synchronous ownership-taking C Stream
-consumer supports leaf-array streams; recursive stream batches, stream production
-and native IPC are planned in the [roadmap](docs/ROADMAP.md).
+import and ownership-taking import for all implemented leaf and recursive struct
+types. Synchronous ownership-taking C Stream consumers support leaf arrays and
+recursive record batches; a native producer exports owning record batches through
+the same ABI. This is a foundation, not a complete Arrow SDK. Native IPC remains
+planned in the [roadmap](docs/ROADMAP.md).
 
 ## Use
 
@@ -128,6 +129,21 @@ released first. Producer failures preserve the errno-style code and permit one
 immediate borrowed `lastError` lookup. The consumer is synchronous and must not be
 used concurrently.
 
+For a `+s` record-batch stream, call `readSchema` once and use
+`nextRecordBatch(allocator)` instead of `next`. Each returned
+`ImportedRecordBatch` owns its array and a deep-copied native schema independently
+of the stream and sibling batches. Its buffers remain zero-copy. Release each
+batch with `deinit`; a `null` result is canonical end-of-stream.
+
+`arrowz.exportRecordBatchStream(allocator, &schema, batches)` moves a native
+schema and schema-equal `OwnedRecordBatch` values into a pure-Zig C Stream.
+Validation or allocation failure preserves every input. On success the caller
+retains only the outer batch-slice allocation; the stream owns all moved values.
+Each callback result is independently releasable, returned batch buffers are
+zero-copy, callback allocation failures retain the current batch for retry, and
+releasing the stream affects only batches not yet returned. See the compile-checked
+[`record_batch_stream` example](examples/record_batch_stream.zig).
+
 ## Verify
 
 ```sh
@@ -141,7 +157,7 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 214 independent C Data/Stream/PyArrow cases, allocation
+ReleaseSafe, including 216 independent C Data/Stream/PyArrow cases, allocation
 failure paths and ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
@@ -155,6 +171,10 @@ the [recursive struct-export spec](specs/0008-struct-c-data-export/spec.md),
 the [borrowed C Data import spec](specs/0009-c-data-borrowed-import/spec.md), alongside
 the [ownership-taking C Data import spec](specs/0010-c-data-owned-import/spec.md),
 the [C Stream leaf consumer spec](specs/0011-c-stream-leaf-consumer/spec.md),
-the [recursive C Data import spec](specs/0012-recursive-c-data-import/spec.md), alongside
+the [recursive C Data import spec](specs/0012-recursive-c-data-import/spec.md),
+the [record-batch schema import spec](specs/0013-c-data-record-batch-schema/spec.md),
+the [record-batch stream consumer spec](specs/0014-c-stream-record-batch-consumer/spec.md),
+the [record-batch stream producer spec](specs/0015-c-stream-record-batch-producer/spec.md),
+the [M2 acceptance spec](specs/0016-m2-acceptance/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.

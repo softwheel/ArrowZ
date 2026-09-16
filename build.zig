@@ -30,5 +30,16 @@ pub fn build(b: *std.Build) void {
             .imports = &.{.{ .name = "arrowz", .module = module }},
         }),
     });
-    b.step("example", "Run native array example").dependOn(&b.addRunArtifact(example).step);
+    const example_step = b.step("example", "Run native examples");
+    example_step.dependOn(&b.addRunArtifact(example).step);
+    const stream_example = b.addExecutable(.{
+        .name = "record-batch-stream",
+        .root_module = b.createModule(.{
+            .root_source_file = b.path("examples/record_batch_stream.zig"),
+            .target = target,
+            .optimize = optimize,
+            .imports = &.{.{ .name = "arrowz", .module = module }},
+        }),
+    });
+    example_step.dependOn(&b.addRunArtifact(stream_example).step);
 }
