@@ -32,8 +32,23 @@ producer contract because the ABI carries no byte sizes. Synchronous serialized
 callbacks are required. Dictionaries, device memory, asynchronous/concurrent
 streams and IPC are intentionally outside M2.
 
-Exact proposed-head CI, mergeability, review and unresolved-thread evidence are
-pending publication.
+Published reconciliation head
+`0bf9c84dc7773f53cb959ef8c5057f7a054e8e96` passed
+[CI run 35053058694](https://github.com/softwheel/ArrowZ/actions/runs/35053058694)
+on 2026-09-16. Both Native Zig Debug and Native Zig ReleaseSafe completed every
+repository gate successfully on the exact proposed commit.
+
+GitHub reported PR #21 clean and mergeable with no reviews or unresolved review
+comments; repository rulesets were empty, and GitHub accepted the protected
+expected-head merge without bypass or force. PR #21 was squash-merged as main
+commit `7e392bc068e609bfea706c6d160ddd4e89c52dc1` on 2026-09-16.
+
+M2 is complete for its explicitly scoped Linux x86_64 C Data/C Stream contracts.
+The next semantic work must begin with an M3 numbered spec for a minimal native
+Zig FlatBuffers/IPC foundation, including strict byte/resource bounds and
+independently generated Arrow interoperability fixtures. M2 does not imply v1
+readiness; IPC, extended coverage, package/release gates and upstream preparation
+remain.
 
 Required verification:
 

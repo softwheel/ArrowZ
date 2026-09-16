@@ -1,6 +1,6 @@
 # Spec 0016: M2 acceptance and public API reconciliation
 
-Status: Implemented; exact proposed-head CI and publication gates pending.
+Status: Verified.
 
 ## Requirements
 
@@ -39,7 +39,7 @@ ReleaseSafe CI, mergeability, review and unresolved-thread checks pass.
 - [x] Correct supported scope, test counts, limitations and spec links.
 - [x] Pass pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, both examples,
       interoperability and no-runtime-dependency gates locally and in CI.
-- [ ] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
+- [x] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
 
 M2 acceptance does not add IPC, FlatBuffers, asynchronous streams, concurrent
 callbacks, device memory, dictionaries or new Arrow types. Those remain later
