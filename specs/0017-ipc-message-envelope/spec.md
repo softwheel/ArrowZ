@@ -1,6 +1,6 @@
 # Spec 0017: Native IPC message envelope reader
 
-Status: Implemented; exact proposed-head CI and publication gates pending.
+Status: Verified.
 
 ## Requirements
 
@@ -45,7 +45,7 @@ dictionaries, compression, file footers, legacy pre-0.15 framing, or async I/O.
       match their header kinds, body lengths and consumed boundaries.
 - [x] Pass pinned Zig 0.16.0 Debug and ReleaseSafe format, tests, examples,
       interoperability and no-runtime-dependency gates locally and in CI.
-- [ ] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
+- [x] Exact proposed-head CI, mergeability, review and unresolved-thread checks.
 
 Recheck the published Arrow IPC encapsulated-message specification and current
 `format/Message.fbs` before final verification.

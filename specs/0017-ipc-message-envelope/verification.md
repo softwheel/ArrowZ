@@ -25,8 +25,22 @@ The Apache Arrow 25.0.1 encapsulated IPC message specification, current
 were rechecked on 2026-09-16. The parser deliberately stops at the verified
 message envelope; header-table semantics are the next slice.
 
-Exact proposed-head CI, mergeability, review and unresolved-thread evidence are
-pending publication.
+Published implementation/evidence head
+`15a047a9fde2f0c9dd2874801b8077309342aefb` passed
+[CI run 35092745449](https://github.com/softwheel/ArrowZ/actions/runs/35092745449)
+on 2026-09-16. Both Native Zig Debug and Native Zig ReleaseSafe completed every
+repository gate successfully on the exact proposed commit. The matching branch
+push run 35092742922 also passed both jobs.
+
+GitHub reported PR #23 clean and mergeable with no reviews or unresolved review
+comments; repository rulesets were empty, and GitHub accepted the protected
+expected-head merge without bypass or force. PR #23 was squash-merged as main
+commit `b720bf0f67f1d24ea380fb877b34243a49ede49d` on 2026-09-16.
+
+Spec 0017 is complete. The next M3 slice should extend the same bounded
+FlatBuffers primitives to decode the `Schema` header for ArrowZ's supported leaf
+and struct types, with depth/field/metadata limits and independent PyArrow schema
+fixtures. Record-batch bodies remain out of scope until that schema gate passes.
 
 Required verification:
 
