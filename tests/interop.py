@@ -49,6 +49,8 @@ lib.arrowz_record_batch_stream_fixture.argtypes = [ct.POINTER(ArrowArrayStream),
 lib.arrowz_record_batch_stream_fixture.restype = ct.c_int
 lib.arrowz_record_batch_stream_export_fixture.argtypes = [ct.POINTER(ArrowArrayStream), ct.POINTER(ct.c_size_t), ct.POINTER(ct.c_size_t)]
 lib.arrowz_record_batch_stream_export_fixture.restype = ct.c_int
+lib.arrowz_ipc_message_fixture.argtypes = [ct.c_void_p, ct.c_size_t, ct.c_uint8, ct.c_size_t]
+lib.arrowz_ipc_message_fixture.restype = ct.c_int
 lib.arrowz_stream_fixture.restype = ct.c_int
 lib.arrowz_recursive_import_fixture.argtypes = [ct.c_uint32, ct.POINTER(ArrowArray), ct.POINTER(ArrowSchema)]
 lib.arrowz_recursive_import_fixture.restype = ct.c_int
@@ -87,6 +89,24 @@ finally:
     release(raw)
     release(schema)
 cases += 1
+
+# PyArrow independently writes current encapsulated IPC schema and record-batch
+# messages; Zig bounds-checks framing and the root FlatBuffers Message table.
+ipc_sink = pa.BufferOutputStream()
+ipc_schema = pa.schema([pa.field("value", pa.int32(), nullable=False)])
+with pa.ipc.new_stream(ipc_sink, ipc_schema) as writer:
+    writer.write_batch(pa.record_batch([pa.array([1, 2], type=pa.int32())], schema=ipc_schema))
+ipc_bytes = ipc_sink.getvalue().to_pybytes()
+ipc_source = pa.BufferReader(ipc_bytes)
+for expected_header in (1, 3):
+    start = ipc_source.tell()
+    reference_message = pa.ipc.read_message(ipc_source)
+    end = ipc_source.tell()
+    encoded = ipc_bytes[start:end]
+    encoded_buffer = (ct.c_ubyte * len(encoded)).from_buffer_copy(encoded)
+    body_length = 0 if reference_message.body is None else reference_message.body.size
+    assert lib.arrowz_ipc_message_fixture(encoded_buffer, len(encoded), expected_header, body_length) == 0
+    cases += 1
 
 # Zig produces the standard stream; PyArrow consumes the schema and recursive
 # batches and must retain the native zero-copy value buffers.
@@ -390,4 +410,4 @@ finally:
     release(raw)
     release(schema)
 cases += 1
-print(f"PASS: {cases} native Zig C Data/Stream and PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")
+print(f"PASS: {cases} native Zig C Data/Stream/IPC and PyArrow {pa.__version__} cases; ABI fields, types, nulls, offsets, zero-copy, release")

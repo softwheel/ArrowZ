@@ -20,7 +20,9 @@ import and ownership-taking import for all implemented leaf and recursive struct
 types. Synchronous ownership-taking C Stream consumers support leaf arrays and
 recursive record batches; a native producer exports owning record batches through
 the same ABI. This is a foundation, not a complete Arrow SDK. Native IPC remains
-planned in the [roadmap](docs/ROADMAP.md).
+in progress: the first bounded reader validates current encapsulated-message
+framing and FlatBuffers `Message` envelopes, but does not yet decode schemas or
+record batches. See the [roadmap](docs/ROADMAP.md).
 
 ## Use
 
@@ -144,6 +146,14 @@ zero-copy, callback allocation failures retain the current batch for retry, and
 releasing the stream affects only batches not yet returned. See the compile-checked
 [`record_batch_stream` example](examples/record_batch_stream.zig).
 
+`arrowz.ipc.parseFrame(bytes, limits)` is the initial native IPC reader. It
+recognizes current continuation-marker framing and canonical EOS, validates the
+root FlatBuffers `Message` table with checked offsets, enforces caller-provided
+metadata/body byte ceilings, and returns borrowed metadata/body slices with the
+metadata version and header kind. Inputs must remain live while those slices are
+used. This deliberately excludes legacy framing, header/schema/record-batch
+decoding, dictionaries, compression and file footers for now.
+
 ## Verify
 
 ```sh
@@ -157,7 +167,7 @@ python -m venv .venv
 ```
 
 The integration command above targets Linux. CI checks Linux x86_64 in Debug and
-ReleaseSafe, including 216 independent C Data/Stream/PyArrow cases, allocation
+ReleaseSafe, including 218 independent C Data/Stream/IPC/PyArrow cases, allocation
 failure paths and ABI layout/zero-copy checks. Other targets remain unverified.
 
 See [Spec 0001](specs/0001-native-foundation/spec.md), its verification record, and
@@ -175,6 +185,7 @@ the [recursive C Data import spec](specs/0012-recursive-c-data-import/spec.md),
 the [record-batch schema import spec](specs/0013-c-data-record-batch-schema/spec.md),
 the [record-batch stream consumer spec](specs/0014-c-stream-record-batch-consumer/spec.md),
 the [record-batch stream producer spec](specs/0015-c-stream-record-batch-producer/spec.md),
-the [M2 acceptance spec](specs/0016-m2-acceptance/spec.md), alongside
+the [M2 acceptance spec](specs/0016-m2-acceptance/spec.md), and
+the [IPC message-envelope spec](specs/0017-ipc-message-envelope/spec.md), alongside
 the [upstream contribution path](docs/UPSTREAM.md). Development is assisted by AI;
 upstream submission requires engaged human review and maintainership.
