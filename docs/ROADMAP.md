@@ -42,7 +42,9 @@ specs/0014-c-stream-record-batch-consumer/spec.md.
 Native record-batch C Stream production is scoped by
 specs/0015-c-stream-record-batch-producer/spec.md.
 Specs 0009 through 0015 now cover M2's bidirectional C Data and C Stream scope;
-the next gate is an explicit M2 acceptance reconciliation and public API review
-under specs/0016-m2-acceptance/spec.md before beginning M3 IPC/FlatBuffers work.
+their combined acceptance and public API review passed under
+specs/0016-m2-acceptance/spec.md in PR #21. M2 is complete for its scoped Linux
+x86_64 gates. The next semantic slice is a numbered M3 native IPC/FlatBuffers
+foundation spec with strict malformed-input and resource-bound requirements.
 Performance follows correctness; preserve zero-copy interoperability where valid.
 Do not add C/C++ implementations or another-language Arrow runtime to save time.
